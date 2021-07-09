@@ -43,7 +43,10 @@ public class DistributedFileSystem extends FileSystem {
      */
     public DistributedFileSystem(InetSocketAddress namenode, Configuration conf) throws IOException {
       super(conf);
+
+      // zeng: client实例
       this.dfs = new DFSClient(namenode, conf);
+      // zeng: name为 域名:端口
       this.name = namenode.getHostName() + ":" + namenode.getPort();
     }
 
@@ -97,6 +100,7 @@ public class DistributedFileSystem extends FileSystem {
         return dfs.delete(getPath(f));
     }
 
+    // zeng: 文件是否存在
     public boolean exists(File f) throws IOException {
         return dfs.exists(getPath(f));
     }
@@ -152,16 +156,20 @@ public class DistributedFileSystem extends FileSystem {
         doFromLocalFile(src, dst, true);
     }
 
+    // zeng: 从本地复制文件到dfs
     public void copyFromLocalFile(File src, File dst) throws IOException {
         doFromLocalFile(src, dst, false);
     }
 
+    // zeng: TODO
     private void doFromLocalFile(File src, File dst, boolean deleteSource) throws IOException {
-        if (exists(dst)) {
-            if (! isDirectory(dst)) {
+        if (exists(dst)) {  // zeng: 目录是否存在
+            if (! isDirectory(dst)) {   // zeng: TODO
                 throw new IOException("Target " + dst + " already exists");
             } else {
+                // zeng: 拼 目标文件名
                 dst = new File(dst, src.getName());
+
                 if (exists(dst)) {
                     throw new IOException("Target " + dst + " already exists");
                 }
@@ -178,15 +186,19 @@ public class DistributedFileSystem extends FileSystem {
             }
         } else {
             byte buf[] = new byte[getConf().getInt("io.file.buffer.size", 4096)];
+
             InputStream in = localFs.open(src);
+
             try {
                 OutputStream out = create(dst);
+
                 try {
                     int bytesRead = in.read(buf);
                     while (bytesRead >= 0) {
                         out.write(buf, 0, bytesRead);
                         bytesRead = in.read(buf);
                     }
+
                 } finally {
                     out.close();
                 }
@@ -194,6 +206,7 @@ public class DistributedFileSystem extends FileSystem {
                 in.close();
             } 
         }
+
         if (deleteSource)
             localFs.delete(src);
     }

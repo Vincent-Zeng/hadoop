@@ -1,12 +1,12 @@
 /**
  * Copyright 2005 The Apache Software Foundation
- *
+ * <p>
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
+ * <p>
+ * http://www.apache.org/licenses/LICENSE-2.0
+ * <p>
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -62,37 +62,51 @@ public class NameNode implements ClientProtocol, DatanodeProtocol, FSConstants {
     private Server server;
     private int handlerCount = 2;
 
-    /** only used for testing purposes  */
+    /**
+     * only used for testing purposes
+     */
     private boolean stopRequested = false;
 
-    /** Format a new filesystem.  Destroys any filesystem that may already
-     * exist at this location.  **/
+    /**
+     * Format a new filesystem.  Destroys any filesystem that may already
+     * exist at this location.
+     **/
     public static void format(Configuration conf) throws IOException {
-      FSDirectory.format(getDir(conf), conf);
+        FSDirectory.format(getDir(conf), conf);
     }
 
     /**
      * Create a NameNode at the default location
      */
     public NameNode(Configuration conf) throws IOException {
-        this(getDir(conf),
-             DataNode.createSocketAddr
-             (conf.get("fs.default.name", "local")).getPort(), conf);
+        this(
+                getDir(conf),
+                DataNode.createSocketAddr(conf.get("fs.default.name", "local")).getPort(),  // zeng: fs.default.name 为 host:post
+                conf
+        );
     }
 
     /**
      * Create a NameNode at the specified location and start it.
      */
     public NameNode(File dir, int port, Configuration conf) throws IOException {
+        // zeng: 管理file block datanode相关信息
         this.namesystem = new FSNamesystem(dir, conf);
+
+        // zeng: 几个handler(线程)来执行调用
         this.handlerCount = conf.getInt("dfs.namenode.handler.count", 10);
+
+        // zeng: server实例 包括一个listener线程和几个handler线程
         this.server = RPC.getServer(this, port, handlerCount, false, conf);
         this.server.start();
     }
 
-    /** Return the configured directory where name data is stored. */
+    // zeng: name data dir
+    /**
+     * Return the configured directory where name data is stored.
+     */
     private static File getDir(Configuration conf) {
-      return new File(conf.get("dfs.name.dir", "/tmp/hadoop/dfs/name"));
+        return new File(conf.get("dfs.name.dir", "/tmp/hadoop/dfs/name"));
     }
 
     /**
@@ -109,20 +123,23 @@ public class NameNode implements ClientProtocol, DatanodeProtocol, FSConstants {
     /**
      * Stop all NameNode threads and wait for all to finish.
      * Package-only access since this is intended for JUnit testing.
-    */
+     */
     void stop() {
-      if (! stopRequested) {
-        stopRequested = true;
-        namesystem.close();
-        server.stop();
-        //this.join();
-      }
+        if (!stopRequested) {
+            stopRequested = true;
+            // zeng: TODO
+            namesystem.close();
+            server.stop();
+            //this.join();
+        }
     }
 
     /////////////////////////////////////////////////////
     // ClientProtocol
     /////////////////////////////////////////////////////
+
     /**
+     *
      */
     public LocatedBlock[] open(String src) throws IOException {
         Object openResults[] = namesystem.open(new UTF8(src));
@@ -139,7 +156,9 @@ public class NameNode implements ClientProtocol, DatanodeProtocol, FSConstants {
         }
     }
 
+    // zeng: TODO
     /**
+     *
      */
     public LocatedBlock create(String src, String clientName, String clientMachine, boolean overwrite) throws IOException {
         Object results[] = namesystem.startFile(new UTF8(src), new UTF8(clientName), new UTF8(clientMachine), overwrite);
@@ -153,6 +172,7 @@ public class NameNode implements ClientProtocol, DatanodeProtocol, FSConstants {
     }
 
     /**
+     *
      */
     public LocatedBlock addBlock(String src, String clientMachine) throws IOException {
         int retries = 5;
@@ -194,16 +214,20 @@ public class NameNode implements ClientProtocol, DatanodeProtocol, FSConstants {
      * The client needs to give up on the block.
      */
     public void abandonBlock(Block b, String src) throws IOException {
-        if (! namesystem.abandonBlock(b, new UTF8(src))) {
+        if (!namesystem.abandonBlock(b, new UTF8(src))) {
             throw new IOException("Cannot abandon block during write to " + src);
         }
     }
+
     /**
+     *
      */
     public void abandonFileInProgress(String src) throws IOException {
         namesystem.abandonFileInProgress(new UTF8(src));
     }
+
     /**
+     *
      */
     public boolean complete(String src, String clientName) throws IOException {
         int returnCode = namesystem.completeFile(new UTF8(src), new UTF8(clientName));
@@ -215,7 +239,9 @@ public class NameNode implements ClientProtocol, DatanodeProtocol, FSConstants {
             throw new IOException("Could not complete write to file " + src + " by " + clientName);
         }
     }
+
     /**
+     *
      */
     public String[][] getHints(String src, long start, long len) throws IOException {
         UTF8 hosts[][] = namesystem.getDatanodeHints(new UTF8(src), start, len);
@@ -232,37 +258,48 @@ public class NameNode implements ClientProtocol, DatanodeProtocol, FSConstants {
             return results;
         }
     }
+
     /**
+     *
      */
     public boolean rename(String src, String dst) throws IOException {
         return namesystem.renameTo(new UTF8(src), new UTF8(dst));
     }
 
     /**
+     *
      */
     public boolean delete(String src) throws IOException {
         return namesystem.delete(new UTF8(src));
     }
 
+    // zeng: 查询文件是否存在
+
     /**
+     *
      */
     public boolean exists(String src) throws IOException {
+        // zeng: TODO
         return namesystem.exists(new UTF8(src));
     }
 
     /**
+     *
      */
     public boolean isDir(String src) throws IOException {
         return namesystem.isDir(new UTF8(src));
     }
 
+    // zeng: 节点加入文件树
     /**
+     *
      */
     public boolean mkdirs(String src) throws IOException {
         return namesystem.mkdirs(new UTF8(src));
     }
 
     /**
+     *
      */
     public boolean obtainLock(String src, String clientName, boolean exclusive) throws IOException {
         int returnCode = namesystem.obtainLock(new UTF8(src), new UTF8(clientName), exclusive);
@@ -276,6 +313,7 @@ public class NameNode implements ClientProtocol, DatanodeProtocol, FSConstants {
     }
 
     /**
+     *
      */
     public boolean releaseLock(String src, String clientName) throws IOException {
         int returnCode = namesystem.releaseLock(new UTF8(src), new UTF8(clientName));
@@ -289,18 +327,21 @@ public class NameNode implements ClientProtocol, DatanodeProtocol, FSConstants {
     }
 
     /**
+     *
      */
     public void renewLease(String clientName) throws IOException {
-        namesystem.renewLease(new UTF8(clientName));        
+        namesystem.renewLease(new UTF8(clientName));
     }
 
     /**
+     *
      */
     public DFSFileInfo[] getListing(String src) throws IOException {
         return namesystem.getListing(new UTF8(src));
     }
 
     /**
+     *
      */
     public long[] getStats() throws IOException {
         long results[] = new long[2];
@@ -310,6 +351,7 @@ public class NameNode implements ClientProtocol, DatanodeProtocol, FSConstants {
     }
 
     /**
+     *
      */
     public DatanodeInfo[] getDatanodeReport() throws IOException {
         DatanodeInfo results[] = namesystem.datanodeReport();
@@ -322,14 +364,16 @@ public class NameNode implements ClientProtocol, DatanodeProtocol, FSConstants {
     ////////////////////////////////////////////////////////////////
     // DatanodeProtocol
     ////////////////////////////////////////////////////////////////
+
     /**
+     *
      */
     public void sendHeartbeat(String sender, long capacity, long remaining) {
         namesystem.gotHeartbeat(new UTF8(sender), capacity, remaining);
     }
 
     public Block[] blockReport(String sender, Block blocks[]) {
-        LOG.info("Block report from "+sender+": "+blocks.length+" blocks.");
+        LOG.info("Block report from " + sender + ": " + blocks.length + " blocks.");
         return namesystem.processReport(blocks, new UTF8(sender));
     }
 
@@ -340,6 +384,7 @@ public class NameNode implements ClientProtocol, DatanodeProtocol, FSConstants {
     }
 
     /**
+     *
      */
     public void errorReport(String sender, String msg) {
         // Log error message from datanode
@@ -373,24 +418,33 @@ public class NameNode implements ClientProtocol, DatanodeProtocol, FSConstants {
     }
 
     /**
+     *
      */
     public static void main(String argv[]) throws Exception {
         Configuration conf = new Configuration();
 
         if (argv.length == 1 && argv[0].equals("-format")) {
-          File dir = getDir(conf);
-          if (dir.exists()) {
-            System.err.print("Re-format filesystem in " + dir +" ? (Y or N) ");
-            if (!(System.in.read() == 'Y')) {
-              System.err.println("Format aborted.");
-              System.exit(1);
+            // zeng: name data dir
+            File dir = getDir(conf);
+
+            if (dir.exists()) {
+                System.err.print("Re-format filesystem in " + dir + " ? (Y or N) ");
+
+                // zeng: 交互
+                if (!(System.in.read() == 'Y')) {
+                    System.err.println("Format aborted.");
+                    System.exit(1);
+                }
             }
-          }
-          format(conf);
-          System.err.println("Formatted "+dir);
-          System.exit(0);
+
+            // zeng: TODO
+            format(conf);
+
+            System.err.println("Formatted " + dir);
+            System.exit(0);
         }
 
+        // zeng: new NameNode
         NameNode namenode = new NameNode(conf);
         namenode.join();
     }

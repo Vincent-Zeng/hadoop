@@ -1,12 +1,12 @@
 /**
  * Copyright 2005 The Apache Software Foundation
- *
+ * <p>
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
+ * <p>
+ * http://www.apache.org/licenses/LICENSE-2.0
+ * <p>
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -30,7 +30,7 @@ import org.apache.hadoop.fs.FileUtil;
  *
  * It keeps the filename->blockset mapping always-current
  * and logged to disk.
- * 
+ *
  * @author Mike Cafarella
  *************************************************/
 class FSDirectory implements FSConstants {
@@ -43,6 +43,8 @@ class FSDirectory implements FSConstants {
     private static final byte OP_DELETE = 2;
     private static final byte OP_MKDIR = 3;
 
+    // zeng: 文件用inode表示, 包括name blocks parent children  这些元素
+
     /******************************************************
      * We keep an in-memory representation of the file/block
      * hierarchy.
@@ -54,6 +56,7 @@ class FSDirectory implements FSConstants {
         public Block blocks[];
 
         /**
+         *
          */
         INode(String name, INode parent, Block blocks[]) {
             this.name = name;
@@ -61,60 +64,76 @@ class FSDirectory implements FSConstants {
             this.blocks = blocks;
         }
 
+        // zeng: inode是否目录
+
         /**
          * Check whether it's a directory
+         *
          * @return
          */
         synchronized public boolean isDir() {
-          return (blocks == null);
+            return (blocks == null);
         }
+
+        // zeng: 根据 路径字符串 从 文件树 中获取相应inode
 
         /**
          * This is the external interface
          */
         INode getNode(String target) {
-            if (! target.startsWith("/") || target.length() == 0) {
+            if (!target.startsWith("/") || target.length() == 0) { // zeng: 不合法路径
                 return null;
-            } else if (parent == null && "/".equals(target)) {
+            } else if (parent == null && "/".equals(target)) {  // zeng: 根目录
                 return this;
             } else {
                 Vector components = new Vector();
+
+                // zeng: 每1级的目录名(最后一级是文件名)
                 int start = 0;
                 int slashid = 0;
                 while (start < target.length() && (slashid = target.indexOf('/', start)) >= 0) {
                     components.add(target.substring(start, slashid));
                     start = slashid + 1;
                 }
+
                 if (start < target.length()) {
                     components.add(target.substring(start));
                 }
+
                 return getNode(components, 0);
             }
         }
 
         /**
+         *
          */
         INode getNode(Vector components, int index) {
-            if (! name.equals((String) components.elementAt(index))) {
+            if (!name.equals((String) components.elementAt(index))) {
                 return null;
             }
-            if (index == components.size()-1) {
+
+            // zeng: 本inode就是最后一级
+            if (index == components.size() - 1) {
                 return this;
             }
 
+            // zeng: 从根目录一级一级往下查询children
             // Check with children
-            INode child = (INode) children.get(components.elementAt(index+1));
+            INode child = (INode) children.get(components.elementAt(index + 1));
             if (child == null) {
                 return null;
             } else {
-                return child.getNode(components, index+1);
+                return child.getNode(components, index + 1);
             }
         }
 
+        // zeng: 加入一个inode
+
         /**
+         *
          */
         INode addNode(String target, Block blks[]) {
-            if (getNode(target) != null) {
+            if (getNode(target) != null) {  // zeng: 是否已存在
                 return null;
             } else {
                 String parentName = DFSFile.getDFSParent(target);
@@ -122,19 +141,30 @@ class FSDirectory implements FSConstants {
                     return null;
                 }
 
+                // zeng: parent node
                 INode parentNode = getNode(parentName);
+
                 if (parentNode == null) {
                     return null;
                 } else {
+                    // zeng: 文件名
                     String targetName = new File(target).getName();
+
+                    // zeng: 新建一个inode
                     INode newItem = new INode(targetName, parentNode, blks);
+
+                    // zeng: 加入children map中
                     parentNode.children.put(targetName, newItem);
+
                     return newItem;
                 }
             }
         }
 
+        // zeng: 从文件树中移除本node
+
         /**
+         *
          */
         boolean removeNode() {
             if (parent == null) {
@@ -144,6 +174,8 @@ class FSDirectory implements FSConstants {
                 return true;
             }
         }
+
+        // zeng: 这棵子文件树下的所有的blocks加入 vector中
 
         /**
          * Collect all the blocks at this INode and all its children.
@@ -162,7 +194,10 @@ class FSDirectory implements FSConstants {
             }
         }
 
+        // zeng: 遍历文件树,统计文件数
+
         /**
+         *
          */
         int numItemsInTree() {
             int total = 0;
@@ -173,7 +208,9 @@ class FSDirectory implements FSConstants {
             return total + 1;
         }
 
+        // zeng: 获取节点全描述符
         /**
+         *
          */
         String computeName() {
             if (parent != null) {
@@ -184,6 +221,7 @@ class FSDirectory implements FSConstants {
         }
 
         /**
+         *
          */
         long computeFileLength() {
             long total = 0;
@@ -196,6 +234,7 @@ class FSDirectory implements FSConstants {
         }
 
         /**
+         *
          */
         long computeContentsLength() {
             long total = computeFileLength();
@@ -207,6 +246,7 @@ class FSDirectory implements FSConstants {
         }
 
         /**
+         *
          */
         void listContents(Vector v) {
             if (parent != null && blocks != null) {
@@ -219,65 +259,91 @@ class FSDirectory implements FSConstants {
             }
         }
 
+        // zeng: 文件树写入out
+
         /**
+         *
          */
         void saveImage(String parentPrefix, DataOutputStream out) throws IOException {
             String fullName = "";
             if (parent != null) {
+                // zeng: 写入当前节点的全描述符
                 fullName = parentPrefix + "/" + name;
                 new UTF8(fullName).write(out);
+
+                // zeng: 写入 当前节点的block数 及 所有block对象
                 if (blocks == null) {
                     out.writeInt(0);
                 } else {
                     out.writeInt(blocks.length);
+
+                    // zeng: 当前节点的所有block对象
                     for (int i = 0; i < blocks.length; i++) {
                         blocks[i].write(out);
                     }
                 }
             }
+
+            // zeng: children中所有节点递归调用saveImage
             for (Iterator it = children.values().iterator(); it.hasNext(); ) {
                 INode child = (INode) it.next();
                 child.saveImage(fullName, out);
             }
+
         }
+
     }
 
+    // zeng: 根目录
     INode rootDir = new INode("", null, null);
+
     TreeSet activeBlocks = new TreeSet();
     TreeMap activeLocks = new TreeMap();
     DataOutputStream editlog = null;
     boolean ready = false;
 
-    /** Access an existing dfs name directory. */
+    /**
+     * Access an existing dfs name directory.
+     */
     public FSDirectory(File dir) throws IOException {
+        // zeng: image文件
         File fullimage = new File(dir, "image");
-        if (! fullimage.exists()) {
-          throw new IOException("NameNode not formatted: " + dir);
+
+        if (!fullimage.exists()) {
+            throw new IOException("NameNode not formatted: " + dir);
         }
+
+        // zeng: edits文件
         File edits = new File(dir, "edits");
-        if (loadFSImage(fullimage, edits)) {
+
+        if (loadFSImage(fullimage, edits)) {    // zeng: 读取image和edits文件,以恢复文件树
+            // zeng: 如果有edit记录, 那么更新image文件
             saveFSImage(fullimage, edits);
         }
 
         synchronized (this) {
             this.ready = true;
             this.notifyAll();
+
+            // zeng: edits文件 outputstream
             this.editlog = new DataOutputStream(new FileOutputStream(edits));
         }
     }
 
-    /** Create a new dfs name directory.  Caution: this destroys all files
-     * in this filesystem. */
+    /**
+     * Create a new dfs name directory.  Caution: this destroys all files
+     * in this filesystem.
+     */
     public static void format(File dir, Configuration conf)
-      throws IOException {
+            throws IOException {
         File image = new File(dir, "image");
         File edits = new File(dir, "edits");
 
         if (!((!image.exists() || FileUtil.fullyDelete(image, conf)) &&
-              (!edits.exists() || edits.delete()) &&
-              image.mkdirs())) {
-          
-          throw new IOException("Unable to format: "+dir);
+                (!edits.exists() || edits.delete()) &&
+                image.mkdirs())) {
+
+            throw new IOException("Unable to format: " + dir);
         }
     }
 
@@ -292,7 +358,7 @@ class FSDirectory implements FSConstants {
      * Block until the object is ready to be used.
      */
     void waitForReady() {
-        if (! ready) {
+        if (!ready) {
             synchronized (this) {
                 while (!ready) {
                     try {
@@ -304,6 +370,8 @@ class FSDirectory implements FSConstants {
         }
     }
 
+    // zeng: 读取image和edits文件,以恢复文件树
+
     /**
      * Load in the filesystem image.  It's a big list of
      * filenames and blocks.  Return whether we should
@@ -312,11 +380,15 @@ class FSDirectory implements FSConstants {
     boolean loadFSImage(File fsdir, File edits) throws IOException {
         //
         // Atomic move sequence, to recover from interrupted save
-        //
+
+        //  zeng: image/fsimage
         File curFile = new File(fsdir, FS_IMAGE);
+        // zeng: image/fsimage.new
         File newFile = new File(fsdir, NEW_FS_IMAGE);
+        // zeng: image/fsimage.old
         File oldFile = new File(fsdir, OLD_FS_IMAGE);
 
+        // zeng: 合并image和edits时宕机的容错处理
         // Maybe we were interrupted between 2 and 4
         if (oldFile.exists() && curFile.exists()) {
             oldFile.delete();
@@ -335,22 +407,35 @@ class FSDirectory implements FSConstants {
         //
         // Load in bits
         //
+        // zeng: 先从image中恢复文件树
         if (curFile.exists()) {
             DataInputStream in = new DataInputStream(new BufferedInputStream(new FileInputStream(curFile)));
+
             try {
+                // zeng: 文件数(包括目录)
                 int numFiles = in.readInt();
-                for (int i = 0; i < numFiles; i++) {
+
+                for (int i = 0; i < numFiles; i++) {    // zeng: 所有文件加入文件树
+                    // zeng: 文件全描述符
                     UTF8 name = new UTF8();
                     name.readFields(in);
+
+                    // zeng: block数
                     int numBlocks = in.readInt();
+
                     if (numBlocks == 0) {
+                        // zeng: 加入文件树
                         unprotectedAddFile(name, null);
                     } else {
                         Block blocks[] = new Block[numBlocks];
                         for (int j = 0; j < numBlocks; j++) {
+                            // zeng: block对象
                             blocks[j] = new Block();
+                            // zeng: block对象字段
                             blocks[j].readFields(in);
                         }
+
+                        // zeng: 加入文件树
                         unprotectedAddFile(name, blocks);
                     }
                 }
@@ -359,7 +444,7 @@ class FSDirectory implements FSConstants {
             }
         }
 
-        if (edits.exists() && loadFSEdits(edits) > 0) {
+        if (edits.exists() && loadFSEdits(edits) > 0) { // zeng: 将edits中记录的操作全部应用到文件树上
             return true;
         } else {
             return false;
@@ -368,7 +453,7 @@ class FSDirectory implements FSConstants {
 
     /**
      * Load an edit log, and apply the changes to the in-memory structure
-     *
+     * <p>
      * This is where we apply edits that we've been writing to disk all
      * along.
      */
@@ -377,53 +462,80 @@ class FSDirectory implements FSConstants {
 
         if (edits.exists()) {
             DataInputStream in = new DataInputStream(new BufferedInputStream(new FileInputStream(edits)));
+
             try {
                 while (in.available() > 0) {
+                    // zeng: 读取 op code
                     byte opcode = in.readByte();
+
+                    // zeng: 多少条edit记录
                     numEdits++;
+
                     switch (opcode) {
-                    case OP_ADD: {
-                        UTF8 name = new UTF8();
-                        name.readFields(in);
-                        ArrayWritable aw = new ArrayWritable(Block.class);
-                        aw.readFields(in);
-                        Writable writables[] = (Writable[]) aw.get();
-                        Block blocks[] = new Block[writables.length];
-                        System.arraycopy(writables, 0, blocks, 0, blocks.length);
-                        unprotectedAddFile(name, blocks);
-                        break;
-                    } 
-                    case OP_RENAME: {
-                        UTF8 src = new UTF8();
-                        UTF8 dst = new UTF8();
-                        src.readFields(in);
-                        dst.readFields(in);
-                        unprotectedRenameTo(src, dst);
-                        break;
-                    }
-                    case OP_DELETE: {
-                        UTF8 src = new UTF8();
-                        src.readFields(in);
-                        unprotectedDelete(src);
-                        break;
-                    }
-                    case OP_MKDIR: {
-                        UTF8 src = new UTF8();
-                        src.readFields(in);
-                        unprotectedMkdir(src.toString());
-                        break;
-                    }
-                    default: {
-                        throw new IOException("Never seen opcode " + opcode);
-                    }
+                        case OP_ADD: {
+                            // zeng: 文件全描述符
+                            UTF8 name = new UTF8();
+                            name.readFields(in);
+
+                            // zeng: 所有block对象
+                            ArrayWritable aw = new ArrayWritable(Block.class);
+                            aw.readFields(in);
+
+                            // zeng: 构建blocks数组
+                            Writable writables[] = (Writable[]) aw.get();
+                            Block blocks[] = new Block[writables.length];
+                            System.arraycopy(writables, 0, blocks, 0, blocks.length);
+
+                            // zeng: 加入文件树
+                            unprotectedAddFile(name, blocks);
+
+                            break;
+                        }
+                        case OP_RENAME: {
+                            // zeng: 读取 源文件全描述符 和 目标文件全描述符名
+                            UTF8 src = new UTF8();
+                            UTF8 dst = new UTF8();
+                            src.readFields(in);
+                            dst.readFields(in);
+
+                            // zeng: 重命名
+                            unprotectedRenameTo(src, dst);
+
+                            break;
+                        }
+                        case OP_DELETE: {
+                            // zeng: 读取文件全描述符
+                            UTF8 src = new UTF8();
+                            src.readFields(in);
+
+                            // zeng: 从文件树中移除
+                            unprotectedDelete(src);
+
+                            break;
+                        }
+                        case OP_MKDIR: {
+                            // zeng: 读取目录全描述符
+                            UTF8 src = new UTF8();
+                            src.readFields(in);
+
+                            // zeng: 在文件树中加入 该目录
+                            unprotectedMkdir(src.toString());
+                            break;
+                        }
+                        default: {
+                            throw new IOException("Never seen opcode " + opcode);
+                        }
                     }
                 }
             } finally {
                 in.close();
             }
         }
+
         return numEdits;
     }
+
+    // zeng: 用当前文件树更新image文件
 
     /**
      * Save the contents of the FS image
@@ -438,38 +550,48 @@ class FSDirectory implements FSConstants {
         //
         DataOutputStream out = new DataOutputStream(new BufferedOutputStream(new FileOutputStream(newFile)));
         try {
+            // zeng: 写入文件数
             out.writeInt(rootDir.numItemsInTree() - 1);
+            // zeng: 文件树写入fsimage.new
             rootDir.saveImage("", out);
         } finally {
             out.close();
         }
+
+        // zeng:  以下操作用来将 fsimage.new 替换掉 fsimage
 
         //
         // Atomic move sequence
         //
         // 1.  Move cur to old
         curFile.renameTo(oldFile);
-        
+
         // 2.  Move new to cur
         newFile.renameTo(curFile);
 
         // 3.  Remove pending-edits file (it's been integrated with newFile)
         edits.delete();
-        
+
         // 4.  Delete old
         oldFile.delete();
     }
 
+    // zeng: 对文件树的操作写入edits文件
     /**
      * Write an operation to the edit log
      */
     void logEdit(byte op, Writable w1, Writable w2) {
         synchronized (editlog) {
             try {
+                // zeng: 写入opcode
                 editlog.write(op);
+
+                // zeng: 写入节点全描述符
                 if (w1 != null) {
                     w1.write(editlog);
                 }
+
+                // zeng: 写入block对象数组
                 if (w2 != null) {
                     w2.write(editlog);
                 }
@@ -493,17 +615,23 @@ class FSDirectory implements FSConstants {
             return false;
         }
     }
-    
+
+    // zeng: 文件加入文件树
+
     /**
+     *
      */
     boolean unprotectedAddFile(UTF8 name, Block blocks[]) {
         synchronized (rootDir) {
             if (blocks != null) {
                 // Add file->block mapping
+                // zeng: 所有block对象加入activeBlocks set中
                 for (int i = 0; i < blocks.length; i++) {
                     activeBlocks.add(blocks[i]);
                 }
             }
+
+            // zeng: 加入文件树
             return (rootDir.addNode(name.toString(), blocks) != null);
         }
     }
@@ -521,27 +649,42 @@ class FSDirectory implements FSConstants {
         }
     }
 
+    // zeng: 重命名(实际为移除旧的inode, 加入新的inode)
+
     /**
+     *
      */
     boolean unprotectedRenameTo(UTF8 src, UTF8 dst) {
-        synchronized(rootDir) {
+        synchronized (rootDir) {
+            // zeng: 源文件全描述符对应inode
             INode removedNode = rootDir.getNode(src.toString());
+
             if (removedNode == null) {
                 return false;
             }
+
+            // zeng: 从文件树中移除本node
             removedNode.removeNode();
+
+            // zeng: 如果目标文件全描述符是个目录, 那么要追加文件名
             if (isDir(dst)) {
                 dst = new UTF8(dst.toString() + "/" + new File(src.toString()).getName());
             }
+
+            // zeng: 目标inode 加入 文件树
             INode newNode = rootDir.addNode(dst.toString(), removedNode.blocks);
+
             if (newNode != null) {
+                // zeng: 复制children
                 newNode.children = removedNode.children;
+
+                // zeng: 更新children中所有inode的parent
                 for (Iterator it = newNode.children.values().iterator(); it.hasNext(); ) {
                     INode child = (INode) it.next();
                     child.parent = newNode;
                 }
                 return true;
-            } else {
+            } else {    // zeng: 失败了, 还原原来的inode
                 rootDir.addNode(src.toString(), removedNode.blocks);
                 return false;
             }
@@ -557,11 +700,16 @@ class FSDirectory implements FSConstants {
         return unprotectedDelete(src);
     }
 
+    // zeng: 从文件树中移除
+
     /**
+     *
      */
     Block[] unprotectedDelete(UTF8 src) {
         synchronized (rootDir) {
+            // zeng: 获取inode
             INode targetNode = rootDir.getNode(src.toString());
+
             if (targetNode == null) {
                 return null;
             } else {
@@ -569,15 +717,20 @@ class FSDirectory implements FSConstants {
                 // Remove the node from the namespace and GC all
                 // the blocks underneath the node.
                 //
-                if (! targetNode.removeNode()) {
+                if (!targetNode.removeNode()) { // zeng: 从文件树中移除本inode
                     return null;
                 } else {
+                    // zeng: 这棵子文件树下的所有的blocks加入 vector中
                     Vector v = new Vector();
                     targetNode.collectSubtreeBlocks(v);
+
+                    // zeng: 从activeBlocks set中移除
                     for (Iterator it = v.iterator(); it.hasNext(); ) {
                         Block b = (Block) it.next();
                         activeBlocks.remove(b);
                     }
+
+                    // zeng: 所有移除的block
                     return (Block[]) v.toArray(new Block[v.size()]);
                 }
             }
@@ -585,6 +738,7 @@ class FSDirectory implements FSConstants {
     }
 
     /**
+     *
      */
     public int obtainLock(UTF8 src, UTF8 holder, boolean exclusive) {
         TreeSet holders = (TreeSet) activeLocks.get(src);
@@ -601,6 +755,7 @@ class FSDirectory implements FSConstants {
     }
 
     /**
+     *
      */
     public int releaseLock(UTF8 src, UTF8 holder) {
         TreeSet holders = (TreeSet) activeLocks.get(src);
@@ -617,7 +772,7 @@ class FSDirectory implements FSConstants {
 
     /**
      * Get a listing of files given path 'src'
-     *
+     * <p>
      * This function is admittedly very inefficient right now.  We'll
      * make it better later.
      */
@@ -635,7 +790,7 @@ class FSDirectory implements FSConstants {
                 DFSFileInfo listing[] = new DFSFileInfo[contents.size()];
                 int i = 0;
                 for (Iterator it = contents.iterator(); it.hasNext(); i++) {
-                    listing[i] = new DFSFileInfo( (INode) it.next() );
+                    listing[i] = new DFSFileInfo((INode) it.next());
                 }
                 return listing;
             }
@@ -657,15 +812,15 @@ class FSDirectory implements FSConstants {
         }
     }
 
-    /** 
+    /**
      * Check whether the filepath could be created
      */
     public boolean isValidToCreate(UTF8 src) {
         String srcs = normalizePath(src);
         synchronized (rootDir) {
-            if (srcs.startsWith("/") && 
-                ! srcs.endsWith("/") && 
-                rootDir.getNode(srcs) == null) {
+            if (srcs.startsWith("/") &&
+                    !srcs.endsWith("/") &&
+                    rootDir.getNode(srcs) == null) {
                 return true;
             } else {
                 return false;
@@ -673,15 +828,21 @@ class FSDirectory implements FSConstants {
         }
     }
 
+    // zeng: 文件全描述符是否目录
+
     /**
      * Check whether the path specifies a directory
      */
     public boolean isDir(UTF8 src) {
         synchronized (rootDir) {
+            // zeng: inode
             INode node = rootDir.getNode(normalizePath(src));
+            // zeng: inode是否目录
             return node != null && node.isDir();
         }
     }
+
+    // zeng: 创建目录及其顶层目录
 
     /**
      * Create the given directory and all its parent dirs.
@@ -699,13 +860,16 @@ class FSDirectory implements FSConstants {
         // Use this to collect all the dirs we need to construct
         Vector v = new Vector();
 
+        // zeng: 目录
         // The dir itself
         v.add(src);
 
+        // zeng: 所有顶层目录
         // All its parents
         String parent = DFSFile.getDFSParent(src);
         while (parent != null) {
             v.add(parent);
+
             parent = DFSFile.getDFSParent(parent);
         }
 
@@ -713,11 +877,16 @@ class FSDirectory implements FSConstants {
         // the way
         boolean lastSuccess = false;
         int numElts = v.size();
-        for (int i = numElts - 1; i >= 0; i--) {
+        for (int i = numElts - 1; i >= 0; i--) {    // zeng: 从最顶层目录开始创建
             String cur = (String) v.elementAt(i);
+
+            // zeng:  在文件树中加入 该文件(目录), 返回创建的inode
             INode inserted = unprotectedMkdir(cur);
+
             if (inserted != null) {
+                // zeng: 对文件树的操作写入edits文件
                 logEdit(OP_MKDIR, new UTF8(inserted.computeName()), null);
+
                 lastSuccess = true;
             } else {
                 lastSuccess = false;
@@ -727,7 +896,9 @@ class FSDirectory implements FSConstants {
     }
 
     /**
+     *
      */
+    // zeng: 在文件树中加入 该目录, 返回创建的inode
     INode unprotectedMkdir(String src) {
         synchronized (rootDir) {
             return rootDir.addNode(src, null);
@@ -735,6 +906,7 @@ class FSDirectory implements FSConstants {
     }
 
     /**
+     *
      */
     String normalizePath(UTF8 src) {
         String srcs = src.toString();

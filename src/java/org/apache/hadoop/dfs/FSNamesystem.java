@@ -1,12 +1,12 @@
 /**
  * Copyright 2005 The Apache Software Foundation
- *
+ * <p>
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
+ * <p>
+ * http://www.apache.org/licenses/LICENSE-2.0
+ * <p>
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -22,6 +22,9 @@ import org.apache.hadoop.util.*;
 import java.io.*;
 import java.util.*;
 import java.util.logging.*;
+
+
+// zeng: 管理file block datanode相关信息
 
 /***************************************************
  * FSNamesystem does the actual bookkeeping work for the
@@ -95,7 +98,7 @@ class FSNamesystem implements FSConstants {
     TreeSet heartbeats = new TreeSet(new Comparator() {
         public int compare(Object o1, Object o2) {
             DatanodeInfo d1 = (DatanodeInfo) o1;
-            DatanodeInfo d2 = (DatanodeInfo) o2;            
+            DatanodeInfo d2 = (DatanodeInfo) o2;
             long lu1 = d1.lastUpdate();
             long lu2 = d2.lastUpdate();
             if (lu1 < lu2) {
@@ -148,19 +151,31 @@ class FSNamesystem implements FSConstants {
      * is stored
      */
     public FSNamesystem(File dir, Configuration conf) throws IOException {
+        // zeng: 文件树表示
         this.dir = new FSDirectory(dir);
+
+        // zeng: 心跳检测线程
         this.hbthread = new Daemon(new HeartbeatMonitor());
+        // zeng: 租约检测线程
         this.lmthread = new Daemon(new LeaseMonitor());
         hbthread.start();
         lmthread.start();
+
         this.systemStart = System.currentTimeMillis();
         this.conf = conf;
-        
+
+        // zeng: 每个block有几个副本
         this.desiredReplication = conf.getInt("dfs.replication", 3);
         this.maxReplication = desiredReplication;
+
+        // zeng: TODO
         this.maxReplicationStreams = conf.getInt("dfs.max-repl-streams", 2);
+
+        // zeng: block最少副本
         this.minReplication = 1;
-        this.heartBeatRecheck= 1000;
+
+        // zeng: 多久检测一次心跳
+        this.heartBeatRecheck = 1000;
     }
 
     /** Close down this filesystem manager.
@@ -168,18 +183,18 @@ class FSNamesystem implements FSConstants {
      * them to finish, but a short timeout returns control back to caller.
      */
     public void close() {
-      synchronized (this) {
-        fsRunning = false;
-      }
+        synchronized (this) {
+            fsRunning = false;
+        }
         try {
             hbthread.join(3000);
         } catch (InterruptedException ie) {
         } finally {
-          // using finally to ensure we also wait for lease daemon
-          try {
-            lmthread.join(3000);
-          } catch (InterruptedException ie) {
-          }
+            // using finally to ensure we also wait for lease daemon
+            try {
+                lmthread.join(3000);
+            } catch (InterruptedException ie) {
+            }
         }
     }
 
@@ -188,6 +203,7 @@ class FSNamesystem implements FSConstants {
     // These methods are called by HadoopFS clients
     //
     /////////////////////////////////////////////////////////
+
     /**
      * The client wants to open the given filename.  Return a
      * list of (block,machineArray) pairs.  The sequence of unique blocks
@@ -236,7 +252,7 @@ class FSNamesystem implements FSConstants {
         Object results[] = null;
         if (pendingCreates.get(src) == null) {
             boolean fileValid = dir.isValidToCreate(src);
-            if (overwrite && ! fileValid) {
+            if (overwrite && !fileValid) {
                 delete(src);
                 fileValid = true;
             }
@@ -248,7 +264,7 @@ class FSNamesystem implements FSConstants {
                 DatanodeInfo targets[] = chooseTargets(this.desiredReplication, null, clientMachine);
                 if (targets.length < this.minReplication) {
                     LOG.warning("Target-length is " + targets.length +
-                        ", below MIN_REPLICATION (" + this.minReplication+ ")");
+                            ", below MIN_REPLICATION (" + this.minReplication + ")");
                     return null;
                 }
 
@@ -272,7 +288,7 @@ class FSNamesystem implements FSConstants {
                 results[0] = allocateBlock(src);
                 results[1] = targets;
             } else { // ! fileValid
-              LOG.warning("Cannot start file because it is invalid. src=" + src);
+                LOG.warning("Cannot start file because it is invalid. src=" + src);
             }
         } else {
             LOG.warning("Cannot start file because pendingCreates is non-null. src=" + src);
@@ -350,9 +366,9 @@ class FSNamesystem implements FSConstants {
      */
     public synchronized int completeFile(UTF8 src, UTF8 holder) {
         if (dir.getFile(src) != null || pendingCreates.get(src) == null) {
-	    LOG.info("Failed to complete " + src + "  because dir.getFile()==" + dir.getFile(src) + " and " + pendingCreates.get(src));
+            LOG.info("Failed to complete " + src + "  because dir.getFile()==" + dir.getFile(src) + " and " + pendingCreates.get(src));
             return OPERATION_FAILED;
-        } else if (! checkFileProgress(src)) {
+        } else if (!checkFileProgress(src)) {
             return STILL_WAITING;
         } else {
             Vector pendingVector = (Vector) pendingCreates.get(src);
@@ -379,7 +395,7 @@ class FSNamesystem implements FSConstants {
                     }
                 }
             }
-            
+
             //
             // Now we can add the (name,blocks) tuple to the filesystem
             //
@@ -394,7 +410,7 @@ class FSNamesystem implements FSConstants {
                     Lease lease = (Lease) leases.get(holder);
                     if (lease != null) {
                         lease.completedCreate(src);
-                        if (! lease.hasLocks()) {
+                        if (!lease.hasLocks()) {
                             leases.remove(holder);
                             sortedLeases.remove(lease);
                         }
@@ -423,7 +439,7 @@ class FSNamesystem implements FSConstants {
             } else {
                 System.out.println("AddFile() for " + src + " failed");
             }
-	    LOG.info("Dropped through on file add....");
+            LOG.info("Dropped through on file add....");
         }
 
         return OPERATION_FAILED;
@@ -502,6 +518,8 @@ class FSNamesystem implements FSConstants {
 
         return (deletedBlocks != null);
     }
+
+    // zeng: TODO
 
     /**
      * Return whether the given filename exists
@@ -582,7 +600,7 @@ class FSNamesystem implements FSConstants {
                     DatanodeInfo cur = (DatanodeInfo) it.next();
                     v.add(cur.getHost());
                 }
-                hosts[i-startBlock] = (UTF8[]) v.toArray(new UTF8[v.size()]);
+                hosts[i - startBlock] = (UTF8[]) v.toArray(new UTF8[v.size()]);
             }
             return hosts;
         }
@@ -605,9 +623,11 @@ class FSNamesystem implements FSConstants {
             this.holder = holder;
             renew();
         }
+
         public void renew() {
             this.lastUpdate = System.currentTimeMillis();
         }
+
         public boolean expired() {
             if (System.currentTimeMillis() - lastUpdate > LEASE_PERIOD) {
                 return true;
@@ -615,21 +635,27 @@ class FSNamesystem implements FSConstants {
                 return false;
             }
         }
+
         public void obtained(UTF8 src) {
             locks.add(src);
         }
+
         public void released(UTF8 src) {
             locks.remove(src);
         }
+
         public void startedCreate(UTF8 src) {
             creates.add(src);
         }
+
         public void completedCreate(UTF8 src) {
             creates.remove(src);
         }
+
         public boolean hasLocks() {
             return (locks.size() + creates.size()) > 0;
         }
+
         public void releaseLocks() {
             for (Iterator it = locks.iterator(); it.hasNext(); ) {
                 UTF8 src = (UTF8) it.next();
@@ -665,6 +691,7 @@ class FSNamesystem implements FSConstants {
             }
         }
     }
+
     /******************************************************
      * LeaseMonitor checks for leases that have expired,
      * and disposes of them.
@@ -672,11 +699,13 @@ class FSNamesystem implements FSConstants {
     class LeaseMonitor implements Runnable {
         public void run() {
             while (fsRunning) {
+
+                // zeng: TODO
                 synchronized (FSNamesystem.this) {
                     synchronized (leases) {
                         Lease top;
                         while ((sortedLeases.size() > 0) &&
-                               ((top = (Lease) sortedLeases.first()) != null)) {
+                                ((top = (Lease) sortedLeases.first()) != null)) {
                             if (top.expired()) {
                                 top.releaseLocks();
                                 leases.remove(top.holder);
@@ -731,7 +760,7 @@ class FSNamesystem implements FSConstants {
                 Lease lease = (Lease) leases.get(holder);
                 if (lease != null) {
                     lease.released(src);
-                    if (! lease.hasLocks()) {
+                    if (!lease.hasLocks()) {
                         leases.remove(holder);
                         sortedLeases.remove(lease);
                     }
@@ -740,9 +769,11 @@ class FSNamesystem implements FSConstants {
         }
         return result;
     }
+
     private int internalReleaseLock(UTF8 src, UTF8 holder) {
         return dir.releaseLock(src, holder);
     }
+
     private void internalReleaseCreate(UTF8 src) {
         Vector v = (Vector) pendingCreates.remove(src);
         for (Iterator it2 = v.iterator(); it2.hasNext(); ) {
@@ -778,6 +809,7 @@ class FSNamesystem implements FSConstants {
     // These methods are called by datanodes
     //
     /////////////////////////////////////////////////////////
+
     /**
      * The given node has reported in.  This method should:
      * 1) Record the heartbeat, so the datanode isn't timed out
@@ -817,6 +849,7 @@ class FSNamesystem implements FSConstants {
          */
         public void run() {
             while (fsRunning) {
+                // zeng: TODO
                 heartbeatCheck();
                 try {
                     Thread.sleep(heartBeatRecheck);
@@ -835,8 +868,8 @@ class FSNamesystem implements FSConstants {
             DatanodeInfo nodeInfo = null;
 
             while ((heartbeats.size() > 0) &&
-                   ((nodeInfo = (DatanodeInfo) heartbeats.first()) != null) &&
-                   (nodeInfo.lastUpdate() < System.currentTimeMillis() - EXPIRE_INTERVAL)) {
+                    ((nodeInfo = (DatanodeInfo) heartbeats.first()) != null) &&
+                    (nodeInfo.lastUpdate() < System.currentTimeMillis() - EXPIRE_INTERVAL)) {
                 LOG.info("Lost heartbeat for " + nodeInfo.getName());
 
                 heartbeats.remove(nodeInfo);
@@ -859,7 +892,7 @@ class FSNamesystem implements FSConstants {
             }
         }
     }
-    
+
     /**
      * The given node is reporting all its blocks.  Use this info to 
      * update the (machine-->blocklist) and (block-->machinelist) tables.
@@ -878,7 +911,7 @@ class FSNamesystem implements FSConstants {
         Block oldReport[] = node.getBlocks();
         while (oldReport != null && newReport != null && oldPos < oldReport.length && newPos < newReport.length) {
             int cmp = oldReport[oldPos].compareTo(newReport[newPos]);
-            
+
             if (cmp == 0) {
                 // Do nothing, blocks are the same
                 oldPos++;
@@ -925,7 +958,7 @@ class FSNamesystem implements FSConstants {
         for (Iterator it = node.getBlockIterator(); it.hasNext(); ) {
             Block b = (Block) it.next();
 
-            if (! dir.isValidBlock(b) && ! pendingCreateBlocks.contains(b)) {
+            if (!dir.isValidBlock(b) && !pendingCreateBlocks.contains(b)) {
                 LOG.info("Obsoleting block " + b);
                 obsolete.add(b);
             }
@@ -943,7 +976,7 @@ class FSNamesystem implements FSConstants {
             containingNodes = new TreeSet();
             blocksMap.put(block, containingNodes);
         }
-        if (! containingNodes.contains(node)) {
+        if (!containingNodes.contains(node)) {
             containingNodes.add(node);
         } else {
             LOG.info("Redundant addStoredBlock request received for block " + block + " on node " + node);
@@ -955,7 +988,7 @@ class FSNamesystem implements FSConstants {
                     neededReplications.remove(block);
                     pendingReplications.remove(block);
                 } else if (containingNodes.size() < this.desiredReplication) {
-                    if (! neededReplications.contains(block)) {
+                    if (!neededReplications.contains(block)) {
                         neededReplications.add(block);
                     }
                 }
@@ -969,12 +1002,12 @@ class FSNamesystem implements FSConstants {
                 for (Iterator it = containingNodes.iterator(); it.hasNext(); ) {
                     DatanodeInfo cur = (DatanodeInfo) it.next();
                     TreeSet excessBlocks = (TreeSet) excessReplicateMap.get(cur.getName());
-                    if (excessBlocks == null || ! excessBlocks.contains(block)) {
+                    if (excessBlocks == null || !excessBlocks.contains(block)) {
                         nonExcess.add(cur);
                     }
                 }
                 if (nonExcess.size() > this.maxReplication) {
-                    chooseExcessReplicates(nonExcess, block, this.maxReplication);    
+                    chooseExcessReplicates(nonExcess, block, this.maxReplication);
                 }
             }
         }
@@ -1026,7 +1059,7 @@ class FSNamesystem implements FSConstants {
      */
     synchronized void removeStoredBlock(Block block, DatanodeInfo node) {
         TreeSet containingNodes = (TreeSet) blocksMap.get(block);
-        if (containingNodes == null || ! containingNodes.contains(node)) {
+        if (containingNodes == null || !containingNodes.contains(node)) {
             throw new IllegalArgumentException("No machine mapping found for block " + block + ", which should be at node " + node);
         }
         containingNodes.remove(node);
@@ -1138,7 +1171,7 @@ class FSNamesystem implements FSConstants {
     public synchronized Object[] pendingTransfers(DatanodeInfo srcNode, int xmitsInProgress) {
         synchronized (neededReplications) {
             Object results[] = null;
-	    int scheduledXfers = 0;
+            int scheduledXfers = 0;
 
             if (neededReplications.size() > 0) {
                 //
@@ -1157,7 +1190,7 @@ class FSNamesystem implements FSConstants {
                     }
 
                     Block block = (Block) it.next();
-                    if (! dir.isValidBlock(block)) {
+                    if (!dir.isValidBlock(block)) {
                         it.remove();
                     } else {
                         TreeSet containingNodes = (TreeSet) blocksMap.get(block);
@@ -1167,7 +1200,7 @@ class FSNamesystem implements FSConstants {
                                 // Build items to return
                                 replicateBlocks.add(block);
                                 replicateTargetSets.add(targets);
-				scheduledXfers += targets.length;
+                                scheduledXfers += targets.length;
                             }
                         }
                     }
@@ -1191,7 +1224,7 @@ class FSNamesystem implements FSConstants {
                             pendingReplications.add(block);
                         }
 
-			LOG.info("Pending transfer (block " + block.getBlockName() + ") from " + srcNode.getName() + " to " + targets.length + " destinations");
+                        LOG.info("Pending transfer (block " + block.getBlockName() + ") from " + srcNode.getName() + " to " + targets.length + " destinations");
                     }
 
                     //
@@ -1204,7 +1237,7 @@ class FSNamesystem implements FSConstants {
 
                     results = new Object[2];
                     results[0] = replicateBlocks.toArray(new Block[replicateBlocks.size()]);
-                    results[1]  = targetMatrix;
+                    results[1] = targetMatrix;
                 }
             }
             return results;
@@ -1280,12 +1313,12 @@ class FSNamesystem implements FSConstants {
         Vector targetList = new Vector();
         for (Iterator it = datanodeMap.values().iterator(); it.hasNext(); ) {
             DatanodeInfo node = (DatanodeInfo) it.next();
-            if (! forbiddenMachines.contains(node.getHost())) {
+            if (!forbiddenMachines.contains(node.getHost())) {
                 targetList.add(node);
             }
         }
         Collections.shuffle(targetList);
-        
+
         //
         // Now pick one
         //
@@ -1330,9 +1363,9 @@ class FSNamesystem implements FSConstants {
             return null;
         } else {
             LOG.warning("Zero targets found, forbidden1.size=" +
-                ( forbidden1 != null ? forbidden1.size() : 0 ) +
-                " forbidden2.size()=" +
-                ( forbidden2 != null ? forbidden2.size() : 0 ));
+                    (forbidden1 != null ? forbidden1.size() : 0) +
+                    " forbidden2.size()=" +
+                    (forbidden2 != null ? forbidden2.size() : 0));
             return null;
         }
     }

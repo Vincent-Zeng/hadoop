@@ -1,12 +1,12 @@
 /**
  * Copyright 2005 The Apache Software Foundation
- *
+ * <p>
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
+ * <p>
+ * http://www.apache.org/licenses/LICENSE-2.0
+ * <p>
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -30,7 +30,7 @@ import org.apache.hadoop.conf.*;
 class FSDataset implements FSConstants {
     static final double USABLE_DISK_PCT = 0.98;
 
-  /**
+    /**
      * A node type that can be built into a tree reflecting the
      * hierarchy of blocks on the local disk.
      */
@@ -81,39 +81,39 @@ class FSDataset implements FSConstants {
                 // working.  It prevents the datablocks from all going
                 // into a single huge directory.
                 /**
-                File localFiles[] = dir.listFiles();
-                if (localFiles.length == 16) {
-                    //
-                    // Create all the necessary subdirs
-                    //
-                    this.children = new FSDir[16];
-                    for (int i = 0; i < children.length; i++) {
-                        String str = Integer.toBinaryString(i);
-                        try {
-                            File subdir = new File(dir, "dir_" + str);
-                            subdir.mkdir();
-                            children[i] = new FSDir(subdir);
-                        } catch (StringIndexOutOfBoundsException excep) {
-                            excep.printStackTrace();
-                            System.out.println("Ran into problem when i == " + i + " an str = " + str);
-                        }
-                    }
+                 File localFiles[] = dir.listFiles();
+                 if (localFiles.length == 16) {
+                 //
+                 // Create all the necessary subdirs
+                 //
+                 this.children = new FSDir[16];
+                 for (int i = 0; i < children.length; i++) {
+                 String str = Integer.toBinaryString(i);
+                 try {
+                 File subdir = new File(dir, "dir_" + str);
+                 subdir.mkdir();
+                 children[i] = new FSDir(subdir);
+                 } catch (StringIndexOutOfBoundsException excep) {
+                 excep.printStackTrace();
+                 System.out.println("Ran into problem when i == " + i + " an str = " + str);
+                 }
+                 }
 
-                    //
-                    // Move existing files into new dirs
-                    //
-                    for (int i = 0; i < localFiles.length; i++) {
-                        Block srcB = new Block(localFiles[i]);
-                        File dst = getBlockFilename(srcB, blkid, depth);
-                        if (!src.renameTo(dst)) {
-                            System.out.println("Unexpected problem in renaming " + src);
-                        }
-                    }
-                }
-                **/
+                 //
+                 // Move existing files into new dirs
+                 //
+                 for (int i = 0; i < localFiles.length; i++) {
+                 Block srcB = new Block(localFiles[i]);
+                 File dst = getBlockFilename(srcB, blkid, depth);
+                 if (!src.renameTo(dst)) {
+                 System.out.println("Unexpected problem in renaming " + src);
+                 }
+                 }
+                 }
+                 **/
             } else {
                 // Find subdir
-                children[getHalfByte(blkid, depth)].addBlock(b, src, blkid, depth+1);
+                children[getHalfByte(blkid, depth)].addBlock(b, src, blkid, depth + 1);
             }
         }
 
@@ -145,7 +145,7 @@ class FSDataset implements FSConstants {
 
         /**
          * Helper method to find file for a Block
-         */         
+         */
         private File getBlockFilename(Block b, long blkid, int depth) {
             if (children == null) {
                 return new File(dir, b.getBlockName());
@@ -155,7 +155,7 @@ class FSDataset implements FSConstants {
                 // That means there are 2^4 possible children, or 16.
                 // The max depth is thus ((len(long) / 4) == 16).
                 //
-                return children[getHalfByte(blkid, depth)].getBlockFilename(b, blkid, depth+1);
+                return children[getHalfByte(blkid, depth)].getBlockFilename(b, blkid, depth + 1);
             }
         }
 
@@ -169,10 +169,10 @@ class FSDataset implements FSConstants {
         }
 
         public String toString() {
-          return "FSDir{" +
-              "dir=" + dir +
-              ", children=" + (children == null ? null : Arrays.asList(children)) +
-              "}";
+            return "FSDir{" +
+                    "dir=" + dir +
+                    ", children=" + (children == null ? null : Arrays.asList(children)) +
+                    "}";
         }
     }
 
@@ -192,9 +192,9 @@ class FSDataset implements FSConstants {
      * An FSDataset has a directory where it loads its data files.
      */
     public FSDataset(File dir, Configuration conf) throws IOException {
-        diskUsage = new DF( dir.getCanonicalPath(), conf); 
+        diskUsage = new DF(dir.getCanonicalPath(), conf);
         this.data = new File(dir, "data");
-        if (! data.exists()) {
+        if (!data.exists()) {
             data.mkdirs();
         }
         this.tmp = new File(dir, "tmp");
@@ -223,7 +223,7 @@ class FSDataset implements FSConstants {
      * Find the block's on-disk length
      */
     public long getLength(Block b) throws IOException {
-        if (! isValidBlock(b)) {
+        if (!isValidBlock(b)) {
             throw new IOException("Block " + b + " is not valid.");
         }
         File f = getFile(b);
@@ -234,7 +234,7 @@ class FSDataset implements FSConstants {
      * Get a stream of data from the indicated block.
      */
     public InputStream getBlockData(Block b) throws IOException {
-        if (! isValidBlock(b)) {
+        if (!isValidBlock(b)) {
             throw new IOException("Block " + b + " is not valid.");
         }
         return new FileInputStream(getFile(b));
@@ -290,23 +290,23 @@ class FSDataset implements FSConstants {
             ongoingCreates.add(b);
             reserved += BLOCK_SIZE;
             f = getTmpFile(b);
-	    try {
-		if (f.exists()) {
-		    throw new IOException("Unexpected problem in startBlock() for " + b + ".  File " + f + " should not be present, but is.");
-		}
+            try {
+                if (f.exists()) {
+                    throw new IOException("Unexpected problem in startBlock() for " + b + ".  File " + f + " should not be present, but is.");
+                }
 
-		//
-		// Create the zero-length temp file
-		//
-		if (!f.createNewFile()) {
-		    throw new IOException("Unexpected problem in startBlock() for " + b + ".  File " + f + " should be creatable, but is already present.");
-		}
-	    } catch (IOException ie) {
+                //
+                // Create the zero-length temp file
+                //
+                if (!f.createNewFile()) {
+                    throw new IOException("Unexpected problem in startBlock() for " + b + ".  File " + f + " should be creatable, but is already present.");
+                }
+            } catch (IOException ie) {
                 System.out.println("Exception!  " + ie);
-		ongoingCreates.remove(b);		
-		reserved -= BLOCK_SIZE;
+                ongoingCreates.remove(b);
+                reserved -= BLOCK_SIZE;
                 throw ie;
-	    }
+            }
         }
 
         //
@@ -330,15 +330,15 @@ class FSDataset implements FSConstants {
      */
     public void finalizeBlock(Block b) throws IOException {
         File f = getTmpFile(b);
-        if (! f.exists()) {
+        if (!f.exists()) {
             throw new IOException("No temporary file " + f + " for block " + b);
         }
-        
+
         synchronized (ongoingCreates) {
             //
             // Make sure still registered as ongoing
             //
-            if (! ongoingCreates.contains(b)) {
+            if (!ongoingCreates.contains(b)) {
                 throw new IOException("Tried to finalize block " + b + ", but not in ongoingCreates table");
             }
 
@@ -355,9 +355,9 @@ class FSDataset implements FSConstants {
             //
             // Done, so deregister from ongoingCreates
             //
-            if (! ongoingCreates.remove(b)) {
+            if (!ongoingCreates.remove(b)) {
                 throw new IOException("Tried to finalize block " + b + ", but could not find it in ongoingCreates after file-move!");
-            } 
+            }
             reserved -= BLOCK_SIZE;
         }
     }
@@ -421,9 +421,9 @@ class FSDataset implements FSConstants {
     }
 
     public String toString() {
-      return "FSDataset{" +
-        "dirpath='" + diskUsage.getDirPath() + "'" +
-        "}";
+        return "FSDataset{" +
+                "dirpath='" + diskUsage.getDirPath() + "'" +
+                "}";
     }
 
 }

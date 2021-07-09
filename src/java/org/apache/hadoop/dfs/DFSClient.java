@@ -1,12 +1,12 @@
 /**
  * Copyright 2005 The Apache Software Foundation
- *
+ * <p>
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
+ * <p>
+ * http://www.apache.org/licenses/LICENSE-2.0
+ * <p>
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -49,23 +49,32 @@ class DFSClient implements FSConstants {
     Daemon leaseChecker;
     private Configuration conf;
 
-    /** 
+    /**
      * Create a new DFSClient connected to the given namenode server.
      */
     public DFSClient(InetSocketAddress nameNodeAddr, Configuration conf) {
         this.conf = conf;
+
+        // zeng: nameode rpc client
         this.namenode = (ClientProtocol) RPC.getProxy(ClientProtocol.class, nameNodeAddr, conf);
+
         try {
+            // zeng: 本机域名
             this.localName = InetAddress.getLocalHost().getHostName();
         } catch (UnknownHostException uhe) {
             this.localName = "";
         }
+
+        // zeng: DFSClient_随机数
         this.clientName = "DFSClient_" + r.nextInt();
+
+        // zeng: TODO
         this.leaseChecker = new Daemon(new LeaseChecker());
         this.leaseChecker.start();
     }
 
     /**
+     *
      */
     public void close() throws IOException {
         this.running = false;
@@ -116,24 +125,29 @@ class DFSClient implements FSConstants {
     }
 
     /**
+     *
      */
     public boolean exists(UTF8 src) throws IOException {
+        // zeng: 请求namenode,判断文件是否存在
         return namenode.exists(src.toString());
     }
 
     /**
+     *
      */
     public boolean isDirectory(UTF8 src) throws IOException {
         return namenode.isDir(src.toString());
     }
 
     /**
+     *
      */
     public DFSFileInfo[] listFiles(UTF8 src) throws IOException {
         return namenode.getListing(src.toString());
     }
 
     /**
+     *
      */
     public long totalRawCapacity() throws IOException {
         long rawNums[] = namenode.getStats();
@@ -141,6 +155,7 @@ class DFSClient implements FSConstants {
     }
 
     /**
+     *
      */
     public long totalRawUsed() throws IOException {
         long rawNums[] = namenode.getStats();
@@ -152,19 +167,21 @@ class DFSClient implements FSConstants {
     }
 
     /**
+     *
      */
     public boolean mkdirs(UTF8 src) throws IOException {
         return namenode.mkdirs(src.toString());
     }
 
     /**
+     *
      */
     public void lock(UTF8 src, boolean exclusive) throws IOException {
         long start = System.currentTimeMillis();
         boolean hasLock = false;
-        while (! hasLock) {
+        while (!hasLock) {
             hasLock = namenode.obtainLock(src.toString(), clientName, exclusive);
-            if (! hasLock) {
+            if (!hasLock) {
                 try {
                     Thread.sleep(400);
                     if (System.currentTimeMillis() - start > 5000) {
@@ -182,9 +199,9 @@ class DFSClient implements FSConstants {
      */
     public void release(UTF8 src) throws IOException {
         boolean hasReleased = false;
-        while (! hasReleased) {
+        while (!hasReleased) {
             hasReleased = namenode.releaseLock(src.toString(), clientName);
-            if (! hasReleased) {
+            if (!hasReleased) {
                 LOG.info("Could not release.  Retrying...");
                 try {
                     Thread.sleep(2000);
@@ -199,8 +216,8 @@ class DFSClient implements FSConstants {
      * That's the local one, if available.
      */
     private DatanodeInfo bestNode(DatanodeInfo nodes[], TreeSet deadNodes) throws IOException {
-        if ((nodes == null) || 
-            (nodes.length - deadNodes.size() < 1)) {
+        if ((nodes == null) ||
+                (nodes.length - deadNodes.size() < 1)) {
             throw new IOException("No live nodes contain current block");
         }
         DatanodeInfo chosenNode = null;
@@ -226,12 +243,14 @@ class DFSClient implements FSConstants {
         return chosenNode;
     }
 
+    // zeng: TODO 租约?
     /***************************************************************
      * Periodically check in with the namenode and renew all the leases
      * when the lease period is half over.
      ***************************************************************/
     class LeaseChecker implements Runnable {
         /**
+         *
          */
         public void run() {
             long lastRenewed = 0;
@@ -268,6 +287,7 @@ class DFSClient implements FSConstants {
         private long blockEnd = -1;
 
         /**
+         *
          */
         public DFSInputStream(String src) throws IOException {
             this.src = src;
@@ -284,7 +304,7 @@ class DFSClient implements FSConstants {
         void openInfo() throws IOException {
             Block oldBlocks[] = this.blocks;
 
-            LocatedBlock results[] = namenode.open(src);            
+            LocatedBlock results[] = namenode.open(src);
             Vector blockV = new Vector();
             Vector nodeV = new Vector();
             for (int i = 0; i < results.length; i++) {
@@ -295,7 +315,7 @@ class DFSClient implements FSConstants {
 
             if (oldBlocks != null) {
                 for (int i = 0; i < oldBlocks.length; i++) {
-                    if (! oldBlocks[i].equals(newBlocks[i])) {
+                    if (!oldBlocks[i].equals(newBlocks[i])) {
                         throw new IOException("Blocklist for " + src + " has changed!");
                     }
                 }
@@ -335,7 +355,7 @@ class DFSClient implements FSConstants {
                     targetBlock = i;
                     break;
                 } else {
-                    targetBlockStart = targetBlockEnd + 1;                    
+                    targetBlockStart = targetBlockEnd + 1;
                 }
             }
             if (targetBlock < 0) {
@@ -357,7 +377,7 @@ class DFSClient implements FSConstants {
                     targetAddr = DataNode.createSocketAddr(chosenNode.getName().toString());
                 } catch (IOException ie) {
                     String blockInfo =
-                      blocks[targetBlock]+" file="+src+" offset="+target;
+                            blocks[targetBlock] + " file=" + src + " offset=" + target;
                     if (failures >= MAX_BLOCK_ACQUIRE_FAILURES) {
                         throw new IOException("Could not obtain block: " + blockInfo);
                     }
@@ -412,7 +432,7 @@ class DFSClient implements FSConstants {
                         try {
                             s.close();
                         } catch (IOException iex) {
-                        }                        
+                        }
                     }
                     s = null;
                 }
@@ -488,12 +508,14 @@ class DFSClient implements FSConstants {
         }
 
         /**
+         *
          */
         public synchronized long getPos() throws IOException {
             return pos;
         }
 
         /**
+         *
          */
         public synchronized int available() throws IOException {
             if (closed) {
@@ -508,8 +530,10 @@ class DFSClient implements FSConstants {
         public boolean markSupported() {
             return false;
         }
+
         public void mark(int readLimit) {
         }
+
         public void reset() throws IOException {
             throw new IOException("Mark not supported");
         }
@@ -547,11 +571,11 @@ class DFSClient implements FSConstants {
         }
 
         private File newBackupFile() throws IOException {
-          File result = conf.getFile("dfs.data.dir",
-                                     "tmp"+File.separator+
-                                     "client-"+Math.abs(r.nextLong()));
-          result.deleteOnExit();
-          return result;
+            File result = conf.getFile("dfs.data.dir",
+                    "tmp" + File.separator +
+                            "client-" + Math.abs(r.nextLong()));
+            result.deleteOnExit();
+            return result;
         }
 
         /**
@@ -564,11 +588,11 @@ class DFSClient implements FSConstants {
             long start = System.currentTimeMillis();
             do {
                 retry = false;
-                
+
                 long localstart = System.currentTimeMillis();
                 boolean blockComplete = false;
-                LocatedBlock lb = null;                
-                while (! blockComplete) {
+                LocatedBlock lb = null;
+                while (!blockComplete) {
                     if (firstTime) {
                         lb = namenode.create(src.toString(), clientName.toString(), localName, overwrite);
                     } else {
@@ -642,7 +666,7 @@ class DFSClient implements FSConstants {
         public synchronized long getPos() throws IOException {
             return filePos;
         }
-			
+
         /**
          * Writes the specified byte to this output stream.
          */
@@ -652,7 +676,7 @@ class DFSClient implements FSConstants {
             }
 
             if ((bytesWrittenToBlock + pos == BLOCK_SIZE) ||
-                (pos >= BUFFER_SIZE)) {
+                    (pos >= BUFFER_SIZE)) {
                 flush();
             }
             outBuf[pos++] = (byte) b;
@@ -662,24 +686,24 @@ class DFSClient implements FSConstants {
         /**
          * Writes the specified bytes to this output stream.
          */
-      public synchronized void write(byte b[], int off, int len)
-        throws IOException {
+        public synchronized void write(byte b[], int off, int len)
+                throws IOException {
             if (closed) {
                 throw new IOException("Stream closed");
             }
             while (len > 0) {
-              int remaining = BUFFER_SIZE - pos;
-              int toWrite = Math.min(remaining, len);
-              System.arraycopy(b, off, outBuf, pos, toWrite);
-              pos += toWrite;
-              off += toWrite;
-              len -= toWrite;
-              filePos += toWrite;
+                int remaining = BUFFER_SIZE - pos;
+                int toWrite = Math.min(remaining, len);
+                System.arraycopy(b, off, outBuf, pos, toWrite);
+                pos += toWrite;
+                off += toWrite;
+                len -= toWrite;
+                filePos += toWrite;
 
-              if ((bytesWrittenToBlock + pos >= BLOCK_SIZE) ||
-                  (pos == BUFFER_SIZE)) {
-                flush();
-              }
+                if ((bytesWrittenToBlock + pos >= BLOCK_SIZE) ||
+                        (pos == BUFFER_SIZE)) {
+                    flush();
+                }
             }
         }
 
@@ -694,9 +718,11 @@ class DFSClient implements FSConstants {
             if (bytesWrittenToBlock + pos >= BLOCK_SIZE) {
                 flushData(BLOCK_SIZE - bytesWrittenToBlock);
             }
+
             if (bytesWrittenToBlock == BLOCK_SIZE) {
                 endBlock();
             }
+
             flushData(pos);
         }
 
@@ -706,7 +732,7 @@ class DFSClient implements FSConstants {
          */
         private synchronized void flushData(int maxPos) throws IOException {
             int workingPos = Math.min(pos, maxPos);
-            
+
             if (workingPos > 0) {
                 //
                 // To the local block backup, write just the bytes
@@ -751,7 +777,7 @@ class DFSClient implements FSConstants {
                 } catch (IOException ie) {
                     handleSocketException(ie);
                 } finally {
-                  in.close();
+                    in.close();
                 }
             }
 
@@ -776,7 +802,7 @@ class DFSClient implements FSConstants {
                 LOG.info("Did not receive WRITE_COMPLETE flag: " + complete);
                 throw new IOException("Did not receive WRITE_COMPLETE_FLAG: " + complete);
             }
-                    
+
             LocatedBlock lb = new LocatedBlock();
             lb.readFields(blockReplyStream);
             namenode.reportWrittenBlock(lb);
@@ -786,20 +812,20 @@ class DFSClient implements FSConstants {
         }
 
         private void handleSocketException(IOException ie) throws IOException {
-          LOG.log(Level.WARNING, "Error while writing.", ie);
-          try {
-            if (s != null) {
-              s.close();
-              s = null;
+            LOG.log(Level.WARNING, "Error while writing.", ie);
+            try {
+                if (s != null) {
+                    s.close();
+                    s = null;
+                }
+            } catch (IOException ie2) {
+                LOG.log(Level.WARNING, "Error closing socket.", ie2);
             }
-          } catch (IOException ie2) {
-            LOG.log(Level.WARNING, "Error closing socket.", ie2);
-          }
-          namenode.abandonBlock(block, src.toString());
+            namenode.abandonBlock(block, src.toString());
         }
 
         /**
-         * Closes this output stream and releases any system 
+         * Closes this output stream and releases any system
          * resources associated with this stream.
          */
         public synchronized void close() throws IOException {
@@ -809,12 +835,12 @@ class DFSClient implements FSConstants {
 
             flush();
             if (filePos == 0 || bytesWrittenToBlock != 0) {
-              try {
-                endBlock();
-              } catch (IOException e) {
-                namenode.abandonFileInProgress(src.toString());
-                throw e;
-              }
+                try {
+                    endBlock();
+                } catch (IOException e) {
+                    namenode.abandonFileInProgress(src.toString());
+                    throw e;
+                }
             }
 
             backupStream.close();
@@ -828,7 +854,7 @@ class DFSClient implements FSConstants {
 
             long localstart = System.currentTimeMillis();
             boolean fileComplete = false;
-            while (! fileComplete) {
+            while (!fileComplete) {
                 fileComplete = namenode.complete(src.toString(), clientName.toString());
                 if (!fileComplete) {
                     try {

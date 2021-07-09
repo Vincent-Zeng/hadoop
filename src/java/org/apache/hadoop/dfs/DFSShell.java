@@ -226,7 +226,9 @@ public class DFSShell {
 
         Configuration conf = new Configuration();
         int i = 0;
+        // zeng: 根据参数获取相应的文件系统表示
         FileSystem fs = FileSystem.parseArgs(argv, i, conf);
+
         String cmd = argv[i++];
         try {
             DFSShell tc = new DFSShell(fs);

@@ -55,7 +55,8 @@ public class ObjectWritable implements Writable, Configurable {
     this.declaredClass = instance.getClass();
     this.instance = instance;
   }
-  
+
+  // zeng: 读取返回的对象
   public void readFields(DataInput in) throws IOException {
     readObject(in, this, this.conf);
   }

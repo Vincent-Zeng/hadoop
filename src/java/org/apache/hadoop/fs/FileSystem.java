@@ -65,20 +65,26 @@ public abstract class FileSystem extends Configured {
         String cmd = argv[i];
         if ("-dfs".equals(cmd)) {
             i++;
+
+            // zeng: 取得参数中的域名和端口, 实例化文件系统
             InetSocketAddress addr = DataNode.createSocketAddr(argv[i++]);
             fs = new DistributedFileSystem(addr, conf);
+
         } else if ("-local".equals(cmd)) {
             i++;
             fs = new LocalFileSystem(conf);
         } else {
+            // zeng: 使用配置文件中指定的文件系统
             fs = get(conf);                          // using default
             LOG.info("No FS indicated, using default:"+fs.getName());
 
         }
+
         System.arraycopy(argv, i, argv, orig, argv.length - i);
         for (int j = argv.length - i; j < argv.length; j++) {
             argv[j] = null;
         }
+
         return fs;
     }
 

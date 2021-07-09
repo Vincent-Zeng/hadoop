@@ -96,6 +96,7 @@ class DFSFile extends File {
             return null;
         if (index == 0)
             return DFS_FILE_SEPARATOR;
+
         return path.substring(0, index);
     }
 }

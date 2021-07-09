@@ -83,6 +83,7 @@ case $startStop in
 
     cd "$HADOOP_HOME"
     echo starting $command, logging to $log
+    # zeng: 执行的还是bin/hadoop
     nohup bin/hadoop $command "$@" >& "$log" < /dev/null &
     echo $! > $pid
     sleep 1; head "$log"
