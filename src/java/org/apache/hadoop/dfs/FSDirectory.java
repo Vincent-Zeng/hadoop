@@ -209,6 +209,7 @@ class FSDirectory implements FSConstants {
         }
 
         // zeng: 获取节点全描述符
+
         /**
          *
          */
@@ -577,6 +578,7 @@ class FSDirectory implements FSConstants {
     }
 
     // zeng: 对文件树的操作写入edits文件
+
     /**
      * Write an operation to the edit log
      */
@@ -691,12 +693,16 @@ class FSDirectory implements FSConstants {
         }
     }
 
+    // zeng: 从文件树中移除
     /**
      * Remove the file from management, return blocks
      */
     public Block[] delete(UTF8 src) {
+        // zeng: 等待文件树加载完成
         waitForReady();
+        // zeng: 操作计入edits中
         logEdit(OP_DELETE, src, null);
+        // zeng: 从文件树中移除
         return unprotectedDelete(src);
     }
 
@@ -820,7 +826,8 @@ class FSDirectory implements FSConstants {
         synchronized (rootDir) {
             if (srcs.startsWith("/") &&
                     !srcs.endsWith("/") &&
-                    rootDir.getNode(srcs) == null) {
+                    rootDir.getNode(srcs) == null   // zeng: 是否已存在
+            ) {
                 return true;
             } else {
                 return false;

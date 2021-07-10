@@ -208,6 +208,7 @@ public class Configuration {
     set(name, Boolean.toString(value));
   }
 
+  // zeng: 根据配置名称 返回数组(逗号分隔的值解析为数组)
   /** Returns the value of the <code>name</code> property as an array of
    * strings.  If no such property is specified, then <code>null</code>
    * is returned.  Values are whitespace or comma delimted.

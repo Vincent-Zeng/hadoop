@@ -167,6 +167,7 @@ public class NameNode implements ClientProtocol, DatanodeProtocol, FSConstants {
         } else {
             Block b = (Block) results[0];
             DatanodeInfo targets[] = (DatanodeInfo[]) results[1];
+
             return new LocatedBlock(b, targets);
         }
     }

@@ -46,13 +46,14 @@ class FSNamesystem implements FSConstants {
     //
     FSDirectory dir;
 
+    // zeng: block -> datanode set 映射
     //
     // Stores the block-->datanode(s) map.  Updated only in response
     // to client-sent information.
     //
     TreeMap blocksMap = new TreeMap();
 
-    //
+    // zeng: 域名 -> DatanodeInfo对象 映射
     // Stores the datanode-->block map.  Done by storing a 
     // set of datanode info objects, sorted by name.  Updated only in
     // response to client-sent information.
@@ -92,6 +93,7 @@ class FSNamesystem implements FSConstants {
     //
     Random r = new Random();
 
+    // zeng: 心跳的所有节点
     //
     // Stores a set of datanode info objects, sorted by heartbeat
     //
@@ -147,7 +149,7 @@ class FSNamesystem implements FSConstants {
     private int heartBeatRecheck;
 
     /**
-     * dir is where the filesystem directory state 
+     * dir is where the filesystem directory state
      * is stored
      */
     public FSNamesystem(File dir, Configuration conf) throws IOException {
@@ -178,7 +180,8 @@ class FSNamesystem implements FSConstants {
         this.heartBeatRecheck = 1000;
     }
 
-    /** Close down this filesystem manager.
+    /**
+     * Close down this filesystem manager.
      * Causes heartbeat and lease daemons to stop; waits briefly for
      * them to finish, but a short timeout returns control back to caller.
      */
@@ -208,7 +211,7 @@ class FSNamesystem implements FSConstants {
      * The client wants to open the given filename.  Return a
      * list of (block,machineArray) pairs.  The sequence of unique blocks
      * in the list indicates all the blocks that make up the filename.
-     *
+     * <p>
      * The client should choose one of the machines from the machineArray
      * at random.
      */
@@ -240,38 +243,50 @@ class FSNamesystem implements FSConstants {
 
     /**
      * The client would like to create a new block for the indicated
-     * filename.  Return an array that consists of the block, plus a set 
-     * of machines.  The first on this list should be where the client 
+     * filename.  Return an array that consists of the block, plus a set
+     * of machines.  The first on this list should be where the client
      * writes data.  Subsequent items in the list must be provided in
      * the connection to the first datanode.
+     *
      * @return Return an array that consists of the block, plus a set
      * of machines, or null if src is invalid for creation (based on
      * {@link FSDirectory#isValidToCreate(UTF8)}.
      */
     public synchronized Object[] startFile(UTF8 src, UTF8 holder, UTF8 clientMachine, boolean overwrite) {
         Object results[] = null;
-        if (pendingCreates.get(src) == null) {
+        if (pendingCreates.get(src) == null) {  // zeng: 如果在pendingCreates里, 表示这个file在创建流程中
             boolean fileValid = dir.isValidToCreate(src);
+
+            // zeng; 文件已存在就覆盖
             if (overwrite && !fileValid) {
+                // zeng: 从文件树中删除
                 delete(src);
+
                 fileValid = true;
             }
 
             if (fileValid) {
                 results = new Object[2];
 
-                // Get the array of replication targets 
+                // Get the array of replication targets
+                // zeng: 给block选择DataNode, 返回DatanodeInfo数组
                 DatanodeInfo targets[] = chooseTargets(this.desiredReplication, null, clientMachine);
+
                 if (targets.length < this.minReplication) {
                     LOG.warning("Target-length is " + targets.length +
                             ", below MIN_REPLICATION (" + this.minReplication + ")");
+
                     return null;
                 }
 
+                // zeng: pendingCreates 该文件对应的vector
                 // Reserve space for this pending file
                 pendingCreates.put(src, new Vector());
+
                 synchronized (leases) {
+                    // zeng: holder为客户端名, 获取 这个客户端持有的租约
                     Lease lease = (Lease) leases.get(holder);
+
                     if (lease == null) {
                         lease = new Lease(holder);
                         leases.put(holder, lease);
@@ -281,6 +296,7 @@ class FSNamesystem implements FSConstants {
                         lease.renew();
                         sortedLeases.add(lease);
                     }
+
                     lease.startedCreate(src);
                 }
 
@@ -293,6 +309,7 @@ class FSNamesystem implements FSConstants {
         } else {
             LOG.warning("Cannot start file because pendingCreates is non-null. src=" + src);
         }
+
         return results;
     }
 
@@ -302,7 +319,7 @@ class FSNamesystem implements FSConstants {
      * of the block, plus a set of machines.  The first on this list should
      * be where the client writes data.  Subsequent items in the list must
      * be provided in the connection to the first datanode.
-     *
+     * <p>
      * Make sure the previous blocks have been reported by datanodes and
      * are replicated.  Will return an empty 2-elt array if we want the
      * client to "try again later".
@@ -361,7 +378,7 @@ class FSNamesystem implements FSConstants {
     /**
      * Finalize the created file and make it world-accessible.  The
      * FSNamesystem will already know the blocks that make up the file.
-     * Before we return, we make sure that all the file's blocks have 
+     * Before we return, we make sure that all the file's blocks have
      * been reported by datanodes and are replicated correctly.
      */
     public synchronized int completeFile(UTF8 src, UTF8 holder) {
@@ -496,23 +513,33 @@ class FSNamesystem implements FSConstants {
      * invalidate some blocks that make up the file.
      */
     public synchronized boolean delete(UTF8 src) {
+        // zeng: 从文件树中移除, 返回移除的所有block
         Block deletedBlocks[] = (Block[]) dir.delete(src);
+
         if (deletedBlocks != null) {
-            for (int i = 0; i < deletedBlocks.length; i++) {
+            for (int i = 0; i < deletedBlocks.length; i++) {    // zeng: 遍历所有移除的block
                 Block b = deletedBlocks[i];
 
-                TreeSet containingNodes = (TreeSet) blocksMap.get(b);
+                TreeSet containingNodes = (TreeSet) blocksMap.get(b);   // zeng: block所在的datanode
                 if (containingNodes != null) {
-                    for (Iterator it = containingNodes.iterator(); it.hasNext(); ) {
+                    for (Iterator it = containingNodes.iterator(); it.hasNext(); ) {    // zeng: 遍历datanode
+
                         DatanodeInfo node = (DatanodeInfo) it.next();
+
+                        // zeng: 获取该datanode对应的一个vector,该vector 存储 最近被移除的block对象
                         Vector invalidateSet = (Vector) recentInvalidateSets.get(node.getName());
+
                         if (invalidateSet == null) {
                             invalidateSet = new Vector();
                             recentInvalidateSets.put(node.getName(), invalidateSet);
                         }
+
+                        // zeng: block加入该vector
                         invalidateSet.add(b);
+
                     }
                 }
+
             }
         }
 
@@ -670,12 +697,14 @@ class FSNamesystem implements FSConstants {
         }
 
         /**
+         *
          */
         public String toString() {
             return "[Lease.  Holder: " + holder.toString() + ", heldlocks: " + locks.size() + ", pendingcreates: " + creates.size() + "]";
         }
 
         /**
+         *
          */
         public int compareTo(Object o) {
             Lease l1 = (Lease) this;
@@ -820,21 +849,34 @@ class FSNamesystem implements FSConstants {
             synchronized (datanodeMap) {
                 long capacityDiff = 0;
                 long remainingDiff = 0;
+
                 DatanodeInfo nodeinfo = (DatanodeInfo) datanodeMap.get(name);
 
                 if (nodeinfo == null) {
                     LOG.info("Got brand-new heartbeat from " + name);
+
+                    // zeng: DatanodeInfo对象
                     nodeinfo = new DatanodeInfo(name, capacity, remaining);
                     datanodeMap.put(name, nodeinfo);
+
+                    // zeng: 容量变更
                     capacityDiff = capacity;
                     remainingDiff = remaining;
                 } else {
+                    // zeng: 容量变更
                     capacityDiff = capacity - nodeinfo.getCapacity();
                     remainingDiff = remaining - nodeinfo.getRemaining();
+
                     heartbeats.remove(nodeinfo);
+
+                    // zeng: 更新DatanodeInfo
                     nodeinfo.updateHeartbeat(capacity, remaining);
                 }
+
+                // zeng: 心跳的机器对应的DatanodeInfo加入hearbeats
                 heartbeats.add(nodeinfo);
+
+                // zeng: 更新容量
                 totalCapacity += capacityDiff;
                 totalRemaining += remainingDiff;
             }
@@ -846,6 +888,7 @@ class FSNamesystem implements FSConstants {
      */
     class HeartbeatMonitor implements Runnable {
         /**
+         *
          */
         public void run() {
             while (fsRunning) {
@@ -894,7 +937,7 @@ class FSNamesystem implements FSConstants {
     }
 
     /**
-     * The given node is reporting all its blocks.  Use this info to 
+     * The given node is reporting all its blocks.  Use this info to
      * update the (machine-->blocklist) and (block-->machinelist) tables.
      */
     public synchronized Block[] processReport(Block newReport[], UTF8 name) {
@@ -967,7 +1010,7 @@ class FSNamesystem implements FSConstants {
     }
 
     /**
-     * Modify (block-->datanode) map.  Remove block from set of 
+     * Modify (block-->datanode) map.  Remove block from set of
      * needed replications if this takes care of the problem.
      */
     synchronized void addStoredBlock(Block block, DatanodeInfo node) {
@@ -1014,11 +1057,11 @@ class FSNamesystem implements FSConstants {
     }
 
     /**
-     * We want a max of "maxReps" replicates for any block, but we now have too many.  
+     * We want a max of "maxReps" replicates for any block, but we now have too many.
      * In this method, copy enough nodes from 'srcNodes' into 'dstNodes' such that:
-     *
+     * <p>
      * srcNodes.size() - dstNodes.size() == maxReps
-     *
+     * <p>
      * For now, we choose nodes randomly.  In the future, we might enforce some
      * kind of policy (like making sure replicates are spread across racks).
      */
@@ -1054,7 +1097,7 @@ class FSNamesystem implements FSConstants {
     }
 
     /**
-     * Modify (block-->datanode) map.  Possibly generate 
+     * Modify (block-->datanode) map.  Possibly generate
      * replication tasks, if the removed block is still valid.
      */
     synchronized void removeStoredBlock(Block block, DatanodeInfo node) {
@@ -1123,6 +1166,7 @@ class FSNamesystem implements FSConstants {
     }
 
     /**
+     *
      */
     public DatanodeInfo[] datanodeReport() {
         DatanodeInfo results[] = null;
@@ -1161,12 +1205,11 @@ class FSNamesystem implements FSConstants {
     /**
      * Return with a list of Block/DataNodeInfo sets, indicating
      * where various Blocks should be copied, ASAP.
-     *
+     * <p>
      * The Array that we return consists of two objects:
      * The 1st elt is an array of Blocks.
      * The 2nd elt is a 2D array of DatanodeInfo objs, identifying the
-     *     target sequence for the Block at the appropriate index.
-     *
+     * target sequence for the Block at the appropriate index.
      */
     public synchronized Object[] pendingTransfers(DatanodeInfo srcNode, int xmitsInProgress) {
         synchronized (neededReplications) {
@@ -1244,12 +1287,15 @@ class FSNamesystem implements FSConstants {
         }
     }
 
+    // zeng: 为block分配datanode
+
     /**
      * Get a certain number of targets, if possible.
      * If not, return as many as we can.
+     *
      * @param desiredReplicates number of duplicates wanted.
-     * @param forbiddenNodes of DatanodeInfo instances that should not be
-     * considered targets.
+     * @param forbiddenNodes    of DatanodeInfo instances that should not be
+     *                          considered targets.
      * @return array of DatanodeInfo instances uses as targets.
      */
     DatanodeInfo[] chooseTargets(int desiredReplicates, TreeSet forbiddenNodes, UTF8 clientMachine) {
@@ -1257,7 +1303,9 @@ class FSNamesystem implements FSConstants {
         Vector targets = new Vector();
 
         for (int i = 0; i < desiredReplicates; i++) {
+            // zeng: 分配一个datanode
             DatanodeInfo target = chooseTarget(forbiddenNodes, alreadyChosen, clientMachine);
+
             if (target != null) {
                 targets.add(target);
                 alreadyChosen.add(target);
@@ -1268,13 +1316,16 @@ class FSNamesystem implements FSConstants {
         return (DatanodeInfo[]) targets.toArray(new DatanodeInfo[targets.size()]);
     }
 
+    // zeng: 分配一个datanode
+
     /**
      * Choose a target from available machines, excepting the
      * given ones.
-     *
-     * Right now it chooses randomly from available boxes.  In future could 
-     * choose according to capacity and load-balancing needs (or even 
+     * <p>
+     * Right now it chooses randomly from available boxes.  In future could
+     * choose according to capacity and load-balancing needs (or even
      * network-topology, to avoid inter-switch traffic).
+     *
      * @param forbidden1 DatanodeInfo targets not allowed, null allowed.
      * @param forbidden2 DatanodeInfo targets not allowed, null allowed.
      * @return DatanodeInfo instance to use or null if something went wrong
@@ -1290,6 +1341,7 @@ class FSNamesystem implements FSConstants {
             return null;
         }
 
+        // zeng: 哪些机器不能选
         //
         // Build a map of forbidden hostnames from the two forbidden sets.
         //
@@ -1307,22 +1359,29 @@ class FSNamesystem implements FSConstants {
             }
         }
 
+        // zeng: 遍历datanodeMap, 选出所有满足条件的
+
         //
         // Build list of machines we can actually choose from
         //
         Vector targetList = new Vector();
         for (Iterator it = datanodeMap.values().iterator(); it.hasNext(); ) {
+
             DatanodeInfo node = (DatanodeInfo) it.next();
             if (!forbiddenMachines.contains(node.getHost())) {
                 targetList.add(node);
             }
+
         }
+        // zeng: shuffle
         Collections.shuffle(targetList);
 
         //
         // Now pick one
         //
         if (targetList.size() > 0) {
+
+            // zeng: 先看看请求客户端所在的机器是否满足条件
             //
             // If the requester's machine is in the targetList, 
             // and it's got the capacity, pick it.
@@ -1331,13 +1390,14 @@ class FSNamesystem implements FSConstants {
                 for (Iterator it = targetList.iterator(); it.hasNext(); ) {
                     DatanodeInfo node = (DatanodeInfo) it.next();
                     if (clientMachine.equals(node.getHost())) {
-                        if (node.getRemaining() > BLOCK_SIZE * MIN_BLOCKS_FOR_WRITE) {
+                        if (node.getRemaining() > BLOCK_SIZE * MIN_BLOCKS_FOR_WRITE) {  // zeng: 剩余空间 大于 5 * 32M
                             return node;
                         }
                     }
                 }
             }
 
+            // zeng: 再看看是否存在  `剩余空间 大于 5 * 32M` 的机器
             //
             // Otherwise, choose node according to target capacity
             //
@@ -1348,6 +1408,7 @@ class FSNamesystem implements FSConstants {
                 }
             }
 
+            // zeng: 如果都没有,就看看是否存在  `剩余空间 大于 32M` 的机器
             //
             // That should do the trick.  But we might not be able
             // to pick any node if the target was out of bytes.  As
@@ -1359,8 +1420,10 @@ class FSNamesystem implements FSConstants {
                     return node;
                 }
             }
+
             LOG.warning("Could not find any nodes with sufficient capacity");
             return null;
+
         } else {
             LOG.warning("Zero targets found, forbidden1.size=" +
                     (forbidden1 != null ? forbidden1.size() : 0) +

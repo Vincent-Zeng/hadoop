@@ -21,6 +21,7 @@ import java.util.*;
 import org.apache.hadoop.fs.*;
 import org.apache.hadoop.conf.*;
 
+// zeng: TODO
 /**************************************************
  * FSDataset manages a set of data blocks.  Each block
  * has a unique name and an extent on disk.
@@ -362,6 +363,7 @@ class FSDataset implements FSConstants {
         }
     }
 
+    // zeng: TODO
     /**
      * Return a table of block data
      */

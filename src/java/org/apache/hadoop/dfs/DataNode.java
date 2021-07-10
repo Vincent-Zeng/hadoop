@@ -98,9 +98,12 @@ public class DataNode implements FSConstants, Runnable {
      * 'dataDir' is where the blocks are stored.
      */
     public DataNode(Configuration conf, String datadir) throws IOException {
-        this(InetAddress.getLocalHost().getHostName(),
-                new File(datadir),
-                createSocketAddr(conf.get("fs.default.name", "local")), conf);
+        this(
+                InetAddress.getLocalHost().getHostName(), // zeng: 本机域名
+                new File(datadir),  // zeng: dfs data dir
+                createSocketAddr(conf.get("fs.default.name", "local")), // zeng: namenode地址 host:port
+                conf
+        );
     }
 
     /**
@@ -108,28 +111,40 @@ public class DataNode implements FSConstants, Runnable {
      * explicitly given.
      */
     public DataNode(String machineName, File datadir, InetSocketAddress nameNodeAddr, Configuration conf) throws IOException {
+        // zeng: namenode rpc client
         this.namenode = (DatanodeProtocol) RPC.getProxy(DatanodeProtocol.class, nameNodeAddr, conf);
+
+        // zeng: TODO
         this.data = new FSDataset(datadir, conf);
 
         ServerSocket ss = null;
+        // zeng: data node port
         int tmpPort = conf.getInt("dfs.datanode.port", 50010);
         while (ss == null) {
             try {
+                // zeng: socket
                 ss = new ServerSocket(tmpPort);
                 LOG.info("Opened server at " + tmpPort);
             } catch (IOException ie) {
                 LOG.info("Could not open server at " + tmpPort + ", trying new port");
-                tmpPort++;
+                tmpPort++;  // zeng: 端口占用(最优可能被其他DataNode实例占用)
             }
         }
+
+        // zeng: datanode的名称用 `域名:port` 表示
         this.localName = machineName + ":" + tmpPort;
+
+        // zeng: TODO
         this.dataXceiveServer = new Daemon(new DataXceiveServer(ss));
         this.dataXceiveServer.start();
 
+        // zeng: 多久上报一次block信息给namenode, 默认1小时
         long blockReportIntervalBasis =
                 conf.getLong("dfs.blockreport.intervalMsec", BLOCKREPORT_INTERVAL);
         this.blockReportInterval =
                 blockReportIntervalBasis - new Random().nextInt((int) (blockReportIntervalBasis / 10));
+
+        // zeng: TODO
         this.datanodeStartupPeriod =
                 conf.getLong("dfs.datanode.startupMsec", DATANODE_STARTUP_PERIOD);
     }
@@ -155,6 +170,8 @@ public class DataNode implements FSConstants, Runnable {
         }
     }
 
+    // zeng: 通知namenode本datanode正在服务中
+
     /**
      * Main loop for the DataNode.  Runs until shutdown,
      * forever calling remote NameNode functions.
@@ -170,13 +187,14 @@ public class DataNode implements FSConstants, Runnable {
         // Now loop for a long time....
         //
         while (shouldRun) {
+            // zeng: 当前时间
             long now = System.currentTimeMillis();
 
             //
             // Every so often, send heartbeat or block-report
             //
             synchronized (receivedBlockList) {
-                if (now - lastHeartbeat > HEARTBEAT_INTERVAL) {
+                if (now - lastHeartbeat > HEARTBEAT_INTERVAL) { // zeng: 心跳周期
                     //
                     // All heartbeat messages include following info:
                     // -- Datanode name
@@ -184,27 +202,39 @@ public class DataNode implements FSConstants, Runnable {
                     // -- Total capacity
                     // -- Bytes remaining
                     //
+
+                    // zeng: 心跳, 参数为本机域名, 本机硬盘容量,本机硬盘剩余容量
                     namenode.sendHeartbeat(localName, data.getCapacity(), data.getRemaining());
+
                     //LOG.info("Just sent heartbeat, with name " + localName);
                     lastHeartbeat = now;
                 }
-                if (now - lastBlockReport > blockReportInterval) {
+
+                if (now - lastBlockReport > blockReportInterval) {  // zeng: block信息上报周期
                     //
                     // Send latest blockinfo report if timer has expired.
                     // Get back a list of local block(s) that are obsolete
                     // and can be safely GC'ed.
                     //
+                    // zeng: TODO
                     Block toDelete[] = namenode.blockReport(localName, data.getBlockReport());
                     data.invalidate(toDelete);
+
                     lastBlockReport = now;
+
                     continue;
                 }
+
+                // zeng: client新上传的block
                 if (receivedBlockList.size() > 0) {
                     //
                     // Send newly-received blockids to namenode
                     //
+
                     Block blockArray[] = (Block[]) receivedBlockList.toArray(new Block[receivedBlockList.size()]);
                     receivedBlockList.removeAllElements();
+
+                    // zeng: TODO
                     namenode.blockReceived(localName, blockArray);
                 }
 
@@ -217,13 +247,15 @@ public class DataNode implements FSConstants, Runnable {
                 // to pass from the time of connection to the first block-transfer.
                 // Otherwise we transfer a lot of blocks unnecessarily.
                 //
-                if (now - sendStart > datanodeStartupPeriod) {
+                if (now - sendStart > datanodeStartupPeriod) {  // zeng: datanode启动一定时间后(默认2分钟)才会从namenode获取命令
                     //
                     // Check to see if there are any block-instructions from the
                     // namenode that this datanode should perform.
                     //
+                    // zeng: TODO
                     BlockCommand cmd = namenode.getBlockwork(localName, xmitsInProgress);
-                    if (cmd != null && cmd.transferBlocks()) {
+
+                    if (cmd != null && cmd.transferBlocks()) {  // zeng: TODO 用来补充副本?
                         //
                         // Send a copy of a block to another datanode
                         //
@@ -243,7 +275,7 @@ public class DataNode implements FSConstants, Runnable {
                                 }
                             }
                         }
-                    } else if (cmd != null && cmd.invalidateBlocks()) {
+                    } else if (cmd != null && cmd.invalidateBlocks()) { // zeng: TODO
                         //
                         // Some local block(s) are obsolete and can be 
                         // safely garbage-collected.
@@ -256,10 +288,10 @@ public class DataNode implements FSConstants, Runnable {
                 // There is no work to do;  sleep until hearbeat timer elapses, 
                 // or work arrives, and then iterate again.
                 //
-                long waitTime = HEARTBEAT_INTERVAL - (now - lastHeartbeat);
-                if (waitTime > 0 && receivedBlockList.size() == 0) {
+                long waitTime = HEARTBEAT_INTERVAL - (now - lastHeartbeat); // zeng: 下一个心跳节点还需要多久
+                if (waitTime > 0 && receivedBlockList.size() == 0) {    // zeng: receivedBlockList如果长度不为0, 那么直接接着处理receivedBlockList,不用wait
                     try {
-                        receivedBlockList.wait(waitTime);
+                        receivedBlockList.wait(waitTime);   // zeng: sleep指定时间, 或者receivedBlockList.notify
                     } catch (InterruptedException ie) {
                     }
                 }
@@ -267,10 +299,12 @@ public class DataNode implements FSConstants, Runnable {
         }
     }
 
+    // zeng: TODO
+
     /**
      * Server used for receiving/sending a block of data.
-     * This is created to listen for requests from clients or 
-     * other DataNodes.  This small server does not use the 
+     * This is created to listen for requests from clients or
+     * other DataNodes.  This small server does not use the
      * Hadoop IPC mechanism.
      */
     class DataXceiveServer implements Runnable {
@@ -282,6 +316,7 @@ public class DataNode implements FSConstants, Runnable {
         }
 
         /**
+         *
          */
         public void run() {
             try {
@@ -625,7 +660,7 @@ public class DataNode implements FSConstants, Runnable {
         byte buf[];
 
         /**
-         * Connect to the first item in the target list.  Pass along the 
+         * Connect to the first item in the target list.  Pass along the
          * entire target list, the block, and the data.
          */
         public DataTransfer(DatanodeInfo targets[], Block b) throws IOException {
@@ -689,13 +724,14 @@ public class DataNode implements FSConstants, Runnable {
      * No matter what kind of exception we get, keep retrying to offerService().
      * That's the loop that connects to the NameNode and provides basic DataNode
      * functionality.
-     *
+     * <p>
      * Only stop when "shouldRun" is turned off (which can only happen at shutdown).
      */
     public void run() {
         LOG.info("Starting DataNode in: " + data.data);
         while (shouldRun) {
             try {
+                // zeng: 通知namenode本datanode正在服务中
                 offerService();
             } catch (Exception ex) {
                 LOG.info("Exception: " + ex);
@@ -708,35 +744,49 @@ public class DataNode implements FSConstants, Runnable {
                 }
             }
         }
+
         LOG.info("Finishing DataNode in: " + data.data);
     }
 
-    /** Start datanode daemons.
+    // zeng: 启动DataNode线程
+
+    /**
+     * Start datanode daemons.
      * Start a datanode daemon for each comma separated data directory
      * specified in property dfs.data.dir
      */
     public static void run(Configuration conf) throws IOException {
+        // zeng: dfs data dir 数组
         String[] dataDirs = conf.getStrings("dfs.data.dir");
+
         subThreadList = new Vector(dataDirs.length);
-        for (int i = 0; i < dataDirs.length; i++) {
+
+        for (int i = 0; i < dataDirs.length; i++) { // zeng: 遍历 目录 数组
+            // zeng: 每个目录创建一个DataNode实例
             DataNode dn = makeInstanceForDir(dataDirs[i], conf);
+
             if (dn != null) {
+                // zeng: 每个DataNode实例启动一个线程
                 Thread t = new Thread(dn, "DataNode: " + dataDirs[i]);
                 t.setDaemon(true); // needed for JUnit testing
                 t.start();
+
                 subThreadList.add(t);
             }
         }
     }
 
-    /** Start datanode daemons.
+    /**
+     * Start datanode daemons.
      * Start a datanode daemon for each comma separated data directory
      * specified in property dfs.data.dir and wait for them to finish.
      * If this thread is specifically interrupted, it will stop waiting.
      */
     private static void runAndWait(Configuration conf) throws IOException {
+        // zeng: 启动DataNode线程
         run(conf);
 
+        // zeng: 等待 所有datanode实例对应线程 结束
         //  Wait for sub threads to exit
         for (Iterator iterator = subThreadList.iterator(); iterator.hasNext(); ) {
             Thread threadDataNode = (Thread) iterator.next();
@@ -751,11 +801,14 @@ public class DataNode implements FSConstants, Runnable {
         }
     }
 
+    // zeng: 创建目录, 创建目录对应的DataNode实例
+
     /**
      * Make an instance of DataNode after ensuring that given data directory
      * (and parent directories, if necessary) can be created.
+     *
      * @param dataDir where the new DataNode instance should keep its files.
-     * @param conf Configuration instance to use.
+     * @param conf    Configuration instance to use.
      * @return DataNode instance for given data dir and conf, or null if directory
      * cannot be created.
      * @throws IOException
@@ -763,13 +816,18 @@ public class DataNode implements FSConstants, Runnable {
     static DataNode makeInstanceForDir(String dataDir, Configuration conf) throws IOException {
         DataNode dn = null;
         File data = new File(dataDir);
+
+        // zeng: 创建目录
         data.mkdirs();
+
         if (!data.isDirectory()) {
             LOG.warning("Can't start DataNode in non-directory: " + dataDir);
             return null;
         } else {
+            // zeng: DataNode实例
             dn = new DataNode(conf, dataDir);
         }
+
         return dn;
     }
 
@@ -782,9 +840,12 @@ public class DataNode implements FSConstants, Runnable {
     }
 
     /**
+     *
      */
     public static void main(String args[]) throws IOException {
         LogFormatter.setShowThreadIDs(true);
+
+        // zeng: 启动服务
         runAndWait(new Configuration());
     }
 }
