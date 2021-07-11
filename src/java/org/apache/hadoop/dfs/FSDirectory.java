@@ -246,6 +246,8 @@ class FSDirectory implements FSConstants {
             return total;
         }
 
+        // zeng: 本inode 和 所有子 inode 放入 vector
+
         /**
          *
          */
@@ -602,15 +604,20 @@ class FSDirectory implements FSConstants {
         }
     }
 
+    // zeng: 将文件加入文件树中
+
     /**
      * Add the given filename to the fs.
      */
     public boolean addFile(UTF8 src, Block blocks[]) {
         waitForReady();
 
+        // zeng: 先创建顶层目录
         // Always do an implicit mkdirs for parent directory tree
         mkdirs(DFSFile.getDFSParent(src.toString()));
-        if (unprotectedAddFile(src, blocks)) {
+
+        if (unprotectedAddFile(src, blocks)) {  // zeng: 文件加入文件树
+            // zeng: 记录对文件树的操作
             logEdit(OP_ADD, src, new ArrayWritable(Block.class, blocks));
             return true;
         } else {
@@ -638,12 +645,15 @@ class FSDirectory implements FSConstants {
         }
     }
 
+    // zeng: 重命名(实际为移除旧的inode, 加入新的inode)
+
     /**
      * Change the filename
      */
     public boolean renameTo(UTF8 src, UTF8 dst) {
         waitForReady();
-        if (unprotectedRenameTo(src, dst)) {
+        if (unprotectedRenameTo(src, dst)) {    // zeng: 重命名(实际为移除旧的inode, 加入新的inode)
+            // zeng: 记录对文件树的操作
             logEdit(OP_RENAME, src, dst);
             return true;
         } else {
@@ -694,6 +704,7 @@ class FSDirectory implements FSConstants {
     }
 
     // zeng: 从文件树中移除
+
     /**
      * Remove the file from management, return blocks
      */
@@ -776,6 +787,8 @@ class FSDirectory implements FSConstants {
         }
     }
 
+    // zeng: 获取目录下所有本级节点信息
+
     /**
      * Get a listing of files given path 'src'
      * <p>
@@ -786,22 +799,29 @@ class FSDirectory implements FSConstants {
         String srcs = normalizePath(src);
 
         synchronized (rootDir) {
+            // zeng: 获取 全描述符 对应的inode
             INode targetNode = rootDir.getNode(srcs);
+
             if (targetNode == null) {
                 return null;
             } else {
+                // zeng: 本inode 和 所有子 inode 放入 vector
                 Vector contents = new Vector();
                 targetNode.listContents(contents);
 
                 DFSFileInfo listing[] = new DFSFileInfo[contents.size()];
                 int i = 0;
                 for (Iterator it = contents.iterator(); it.hasNext(); i++) {
+                    // zeng: 构造DFSFileInfo
                     listing[i] = new DFSFileInfo((INode) it.next());
                 }
+
                 return listing;
             }
         }
     }
+
+    // zeng: 获取文件的所有block
 
     /**
      * Get the blocks associated with the file
@@ -922,6 +942,8 @@ class FSDirectory implements FSConstants {
         }
         return srcs;
     }
+
+    // zeng: 是否是文件树中的block
 
     /**
      * Returns whether the given block is one pointed-to by a file.

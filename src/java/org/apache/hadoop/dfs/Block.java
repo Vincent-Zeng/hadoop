@@ -54,6 +54,7 @@ class Block implements Writable, Comparable {
     /**
      */
     public Block() {
+        // zeng: TODO blkid怎么确保唯一啊?
         this.blkid = r.nextLong();
         this.len = 0;
     }

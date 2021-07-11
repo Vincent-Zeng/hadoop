@@ -102,6 +102,7 @@ public class NameNode implements ClientProtocol, DatanodeProtocol, FSConstants {
     }
 
     // zeng: name data dir
+
     /**
      * Return the configured directory where name data is stored.
      */
@@ -156,11 +157,13 @@ public class NameNode implements ClientProtocol, DatanodeProtocol, FSConstants {
         }
     }
 
-    // zeng: TODO
+    // zeng: 为新文件 选择DatanodeInfo 和 分配第一个block
+
     /**
      *
      */
     public LocatedBlock create(String src, String clientName, String clientMachine, boolean overwrite) throws IOException {
+        // zeng: 为新文件 选择DatanodeInfo 和 分配第一个block
         Object results[] = namesystem.startFile(new UTF8(src), new UTF8(clientName), new UTF8(clientMachine), overwrite);
         if (results == null) {
             throw new IOException("Cannot create file " + src + " on client " + clientName);
@@ -168,16 +171,23 @@ public class NameNode implements ClientProtocol, DatanodeProtocol, FSConstants {
             Block b = (Block) results[0];
             DatanodeInfo targets[] = (DatanodeInfo[]) results[1];
 
+            // zeng: 封装成LocatedBlock对象
             return new LocatedBlock(b, targets);
         }
     }
+
+    // zeng:  为文件增加一个block 并为block选择DatanodeInfo
 
     /**
      *
      */
     public LocatedBlock addBlock(String src, String clientMachine) throws IOException {
         int retries = 5;
+
+        // zeng:  为文件增加一个block 并为block选择DatanodeInfo
         Object results[] = namesystem.getAdditionalBlock(new UTF8(src), new UTF8(clientMachine));
+
+        // zeng: 等文件的其他block写完才能分配新block 重试5次
         while (results != null && results[0] == null && retries > 0) {
             try {
                 Thread.sleep(100);
@@ -194,9 +204,13 @@ public class NameNode implements ClientProtocol, DatanodeProtocol, FSConstants {
         } else {
             Block b = (Block) results[0];
             DatanodeInfo targets[] = (DatanodeInfo[]) results[1];
+
+            // zeng: 封装成LocatedBlock
             return new LocatedBlock(b, targets);
         }
     }
+
+    // zeng: 客户端上报 完成上传的 block
 
     /**
      * The client can report in a set written blocks that it wrote.
@@ -206,6 +220,7 @@ public class NameNode implements ClientProtocol, DatanodeProtocol, FSConstants {
     public void reportWrittenBlock(LocatedBlock lb) throws IOException {
         Block b = lb.getBlock();
         DatanodeInfo targets[] = lb.getLocations();
+
         for (int i = 0; i < targets.length; i++) {
             namesystem.blockReceived(b, targets[i].getName());
         }
@@ -227,11 +242,15 @@ public class NameNode implements ClientProtocol, DatanodeProtocol, FSConstants {
         namesystem.abandonFileInProgress(new UTF8(src));
     }
 
+    // zeng: 设置block的len, 将文件加入文件树
+
     /**
      *
      */
     public boolean complete(String src, String clientName) throws IOException {
+
         int returnCode = namesystem.completeFile(new UTF8(src), new UTF8(clientName));
+
         if (returnCode == STILL_WAITING) {
             return false;
         } else if (returnCode == COMPLETE_SUCCESS) {
@@ -260,12 +279,16 @@ public class NameNode implements ClientProtocol, DatanodeProtocol, FSConstants {
         }
     }
 
+    // zeng: 重命名(实际为移除旧的inode, 加入新的inode)
+
     /**
      *
      */
     public boolean rename(String src, String dst) throws IOException {
         return namesystem.renameTo(new UTF8(src), new UTF8(dst));
     }
+
+    // zeng: 文件从文件树中移除, block加入recentInvalidateSets中等待datanode移除
 
     /**
      *
@@ -274,15 +297,16 @@ public class NameNode implements ClientProtocol, DatanodeProtocol, FSConstants {
         return namesystem.delete(new UTF8(src));
     }
 
-    // zeng: 查询文件是否存在
+    // zeng: 文件是否在文件树中存在
 
     /**
      *
      */
     public boolean exists(String src) throws IOException {
-        // zeng: TODO
         return namesystem.exists(new UTF8(src));
     }
+
+    // zeng: 文件全描述符是否目录
 
     /**
      *
@@ -292,6 +316,7 @@ public class NameNode implements ClientProtocol, DatanodeProtocol, FSConstants {
     }
 
     // zeng: 节点加入文件树
+
     /**
      *
      */
@@ -334,6 +359,8 @@ public class NameNode implements ClientProtocol, DatanodeProtocol, FSConstants {
         namesystem.renewLease(new UTF8(clientName));
     }
 
+    // zeng: 获取目录下所有本级节点信息
+
     /**
      *
      */
@@ -366,6 +393,8 @@ public class NameNode implements ClientProtocol, DatanodeProtocol, FSConstants {
     // DatanodeProtocol
     ////////////////////////////////////////////////////////////////
 
+    // zeng: 接收到datanode心跳, 更新datanode相关信息
+
     /**
      *
      */
@@ -373,11 +402,14 @@ public class NameNode implements ClientProtocol, DatanodeProtocol, FSConstants {
         namesystem.gotHeartbeat(new UTF8(sender), capacity, remaining);
     }
 
+    // zeng:datanode上报所有block信息
     public Block[] blockReport(String sender, Block blocks[]) {
         LOG.info("Block report from " + sender + ": " + blocks.length + " blocks.");
+
         return namesystem.processReport(blocks, new UTF8(sender));
     }
 
+    // zeng: datanode上报完成上传的 block
     public void blockReceived(String sender, Block blocks[]) {
         for (int i = 0; i < blocks.length; i++) {
             namesystem.blockReceived(blocks[i], new UTF8(sender));
@@ -392,18 +424,25 @@ public class NameNode implements ClientProtocol, DatanodeProtocol, FSConstants {
         //LOG.info("Report from " + sender + ": " + msg);
     }
 
+    // zeng: 返回 需要datanode对block进行的操作, datanode会执行这些操作
+
     /**
      * Return a block-oriented command for the datanode to execute.
      * This will be either a transfer or a delete operation.
      */
     public BlockCommand getBlockwork(String sender, int xmitsInProgress) {
+        // zeng: 需要复制的block, 及block需要复制到哪些datanode
+
         //
         // Ask to perform pending transfers, if any
         //
+        // zeng: xmitsInProgress: datanode现有多少个block复制任务
         Object xferResults[] = namesystem.pendingTransfers(new DatanodeInfo(new UTF8(sender)), xmitsInProgress);
         if (xferResults != null) {
             return new BlockCommand((Block[]) xferResults[0], (DatanodeInfo[][]) xferResults[1]);
         }
+
+        // zeng: 需要datanode删除的block
 
         //
         // If there are no transfers, check for recently-deleted blocks that

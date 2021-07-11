@@ -53,13 +53,14 @@ class FSNamesystem implements FSConstants {
     //
     TreeMap blocksMap = new TreeMap();
 
-    // zeng: 域名 -> DatanodeInfo对象 映射
+    // zeng: datanode名称 -> DatanodeInfo对象 映射
     // Stores the datanode-->block map.  Done by storing a 
     // set of datanode info objects, sorted by name.  Updated only in
     // response to client-sent information.
     //
     TreeMap datanodeMap = new TreeMap();
 
+    // zeng: datanode名称 -> 要删除的block副本set
     //
     // Keeps a Vector for every named machine.  The Vector contains
     // blocks that have recently been invalidated and are thought to live
@@ -67,6 +68,7 @@ class FSNamesystem implements FSConstants {
     //
     TreeMap recentInvalidateSets = new TreeMap();
 
+    // zeng: datanode名称 -> 多余block副本 set
     //
     // Keeps a TreeSet for every named node.  Each treeset contains
     // a list of the blocks that are "extra" at that location.  We'll
@@ -74,12 +76,14 @@ class FSNamesystem implements FSConstants {
     //
     TreeMap excessReplicateMap = new TreeMap();
 
+    // zeng: 创建中的文件 文件全描述符 -> block set 映射
     //
     // Keeps track of files that are being created, plus the
     // blocks that make them up.
     //
     TreeMap pendingCreates = new TreeMap();
 
+    // zeng: 所有 正在创建中的文件的block
     //
     // Keeps track of the blocks that are part of those pending creates
     //
@@ -117,7 +121,9 @@ class FSNamesystem implements FSConstants {
     // Store set of Blocks that need to be replicated 1 or more times.
     // We also store pending replication-orders.
     //
+    // zeng: 需要复制的block
     private TreeSet neededReplications = new TreeSet();
+    // zeng: 正在复制中的block (用来在复制失败时重新发起复制任务, 这个版本还没有实现重新发起的逻辑)
     private TreeSet pendingReplications = new TreeSet();
 
     //
@@ -241,6 +247,8 @@ class FSNamesystem implements FSConstants {
         return results;
     }
 
+    // zeng: 为新文件 分配第一个block 并为 block选择DatanodeInfo
+
     /**
      * The client would like to create a new block for the indicated
      * filename.  Return an array that consists of the block, plus a set
@@ -283,8 +291,8 @@ class FSNamesystem implements FSConstants {
                 // Reserve space for this pending file
                 pendingCreates.put(src, new Vector());
 
+                // zeng: TODO 租约 没看到校验租约的地方 0.1.0未实现完?
                 synchronized (leases) {
-                    // zeng: holder为客户端名, 获取 这个客户端持有的租约
                     Lease lease = (Lease) leases.get(holder);
 
                     if (lease == null) {
@@ -300,8 +308,11 @@ class FSNamesystem implements FSConstants {
                     lease.startedCreate(src);
                 }
 
+                // zeng: 分配该file下的一个block对象
                 // Create next block
                 results[0] = allocateBlock(src);
+
+                // zeng: 选择的DatanodeInfo
                 results[1] = targets;
             } else { // ! fileValid
                 LOG.warning("Cannot start file because it is invalid. src=" + src);
@@ -312,6 +323,8 @@ class FSNamesystem implements FSConstants {
 
         return results;
     }
+
+    // zeng: 为文件增加一个block 并为block选择DatanodeInfo
 
     /**
      * The client would like to obtain an additional block for the indicated
@@ -332,18 +345,23 @@ class FSNamesystem implements FSConstants {
             //
             // If we fail this, bad things happen!
             //
-            if (checkFileProgress(src)) {
-                // Get the array of replication targets 
+            if (checkFileProgress(src)) {   // zeng: 文件已经已经有其他block 并且 其他的block都有足够的副本
+                // Get the array of replication targets
+                // zeng: 为block分配datanode
                 DatanodeInfo targets[] = chooseTargets(this.desiredReplication, null, clientMachine);
+
                 if (targets.length < this.minReplication) {
                     return null;
                 }
 
                 // Create next block
+                //zeng: 分配该file下的一个block对象
                 results[0] = allocateBlock(src);
+
                 results[1] = targets;
             }
         }
+
         return results;
     }
 
@@ -375,6 +393,8 @@ class FSNamesystem implements FSConstants {
         internalReleaseCreate(src);
     }
 
+    // zeng: 设置block的len, 将文件加入文件树
+
     /**
      * Finalize the created file and make it world-accessible.  The
      * FSNamesystem will already know the blocks that make up the file.
@@ -385,12 +405,13 @@ class FSNamesystem implements FSConstants {
         if (dir.getFile(src) != null || pendingCreates.get(src) == null) {
             LOG.info("Failed to complete " + src + "  because dir.getFile()==" + dir.getFile(src) + " and " + pendingCreates.get(src));
             return OPERATION_FAILED;
-        } else if (!checkFileProgress(src)) {
+        } else if (!checkFileProgress(src)) {   // zeng:  如果block没有足够的副本
             return STILL_WAITING;
         } else {
             Vector pendingVector = (Vector) pendingCreates.get(src);
             Block pendingBlocks[] = (Block[]) pendingVector.toArray(new Block[pendingVector.size()]);
 
+            // zeng: 遍历这个文件下已上传完毕的所有block, 设置DatanodeInfo.blocks中的block对象的len
             //
             // We have the pending blocks, but they won't have
             // length info in them (as they were allocated before
@@ -403,26 +424,36 @@ class FSNamesystem implements FSConstants {
             for (int i = 0; i < pendingBlocks.length; i++) {
                 Block b = pendingBlocks[i];
                 TreeSet containingNodes = (TreeSet) blocksMap.get(b);
+
+                // zeng: 从datanode中找到的block才有len
+
                 DatanodeInfo node = (DatanodeInfo) containingNodes.first();
+
+                // zeng: 遍历查找,效率很低
                 for (Iterator it = node.getBlockIterator(); it.hasNext(); ) {
                     Block cur = (Block) it.next();
-                    if (b.getBlockId() == cur.getBlockId()) {
-                        b.setNumBytes(cur.getNumBytes());
+                    if (b.getBlockId() == cur.getBlockId()) {   // zeng: 找到block
+                        b.setNumBytes(cur.getNumBytes());   // zeng: 设置长度
                         break;
                     }
                 }
+
             }
 
             //
             // Now we can add the (name,blocks) tuple to the filesystem
             //
-            if (dir.addFile(src, pendingBlocks)) {
+            if (dir.addFile(src, pendingBlocks)) {  // zeng: 文件加入文件树
+                // zeng: 从pendingCreate中移除这个文件对应的vector
                 // The file is no longer pending
                 pendingCreates.remove(src);
+
+                // zeng: 从pendingCreateBlocks中移除
                 for (int i = 0; i < pendingBlocks.length; i++) {
                     pendingCreateBlocks.remove(pendingBlocks[i]);
                 }
 
+                // zeng: TODO 租约相关
                 synchronized (leases) {
                     Lease lease = (Lease) leases.get(holder);
                     if (lease != null) {
@@ -441,6 +472,7 @@ class FSNamesystem implements FSConstants {
                 // write.
                 //
 
+                // zeng: 如果block的副本不够, 那么将其放入neededReplications中等待复制
                 // Now that the file is real, we need to be sure to replicate
                 // the blocks.
                 for (int i = 0; i < pendingBlocks.length; i++) {
@@ -452,6 +484,7 @@ class FSNamesystem implements FSConstants {
                         }
                     }
                 }
+
                 return COMPLETE_SUCCESS;
             } else {
                 System.out.println("AddFile() for " + src + " failed");
@@ -462,16 +495,25 @@ class FSNamesystem implements FSConstants {
         return OPERATION_FAILED;
     }
 
+    // zeng: 分配该file下的一个block对象
+
     /**
      * Allocate a block at the given pending filename
      */
     synchronized Block allocateBlock(UTF8 src) {
         Block b = new Block();
+
+        // zeng: 放入pendingCreates中该file对应的vector中
         Vector v = (Vector) pendingCreates.get(src);
         v.add(b);
+
+        // zeng: 放入pendingCreateBlocks中
         pendingCreateBlocks.add(b);
+
         return b;
     }
+
+    // zeng: 文件已经已经有其他block 并且 其他的block都有足够的副本
 
     /**
      * Check that the indicated file's blocks are present and
@@ -487,6 +529,7 @@ class FSNamesystem implements FSConstants {
                 return false;
             }
         }
+
         return true;
     }
 
@@ -501,12 +544,16 @@ class FSNamesystem implements FSConstants {
     // are made, edit namespace and return to client.
     ////////////////////////////////////////////////////////////////
 
+    // zeng: 重命名(实际为移除旧的inode, 加入新的inode)
+
     /**
      * Change the indicated filename.
      */
     public boolean renameTo(UTF8 src, UTF8 dst) {
         return dir.renameTo(src, dst);
     }
+
+    // zeng: 文件从文件树中移除, block加入recentInvalidateSets中等待datanode移除
 
     /**
      * Remove the indicated filename from the namespace.  This may
@@ -546,7 +593,7 @@ class FSNamesystem implements FSConstants {
         return (deletedBlocks != null);
     }
 
-    // zeng: TODO
+    // zeng: 文件是否在文件树中存在
 
     /**
      * Return whether the given filename exists
@@ -558,6 +605,8 @@ class FSNamesystem implements FSConstants {
             return false;
         }
     }
+
+    // zeng: 文件全描述符是否目录
 
     /**
      * Whether the given name is a directory
@@ -825,6 +874,8 @@ class FSNamesystem implements FSConstants {
         }
     }
 
+    // zeng: 获取目录下所有本级节点信息
+
     /**
      * Get a listing of all files at 'src'.  The Object[] array
      * exists so we can return file attributes (soon to be implemented)
@@ -838,6 +889,8 @@ class FSNamesystem implements FSConstants {
     // These methods are called by datanodes
     //
     /////////////////////////////////////////////////////////
+
+    // zeng: 接收到datanode心跳, 更新datanode相关信息
 
     /**
      * The given node has reported in.  This method should:
@@ -936,16 +989,21 @@ class FSNamesystem implements FSConstants {
         }
     }
 
+    // zeng: datanode上报所有block信息
+
     /**
      * The given node is reporting all its blocks.  Use this info to
      * update the (machine-->blocklist) and (block-->machinelist) tables.
      */
     public synchronized Block[] processReport(Block newReport[], UTF8 name) {
+        // zeng: 根据datanode名称获取DatanodeInfo对象
         DatanodeInfo node = (DatanodeInfo) datanodeMap.get(name);
+
         if (node == null) {
             throw new IllegalArgumentException("Unexpected exception.  Received block report from node " + name + ", but there is no info for " + name);
         }
 
+        // zeng: 对比 上报的block数组 和 DatanodeInfo.blocks 数组, 更新 block -> datanode set 映射
         //
         // Modify the (block-->datanode) map, according to the difference
         // between the old and new block report.
@@ -956,34 +1014,42 @@ class FSNamesystem implements FSConstants {
             int cmp = oldReport[oldPos].compareTo(newReport[newPos]);
 
             if (cmp == 0) {
+                // zeng: block没变 下一个block
                 // Do nothing, blocks are the same
                 oldPos++;
                 newPos++;
             } else if (cmp < 0) {
+                // zeng: 有删除的block
                 // The old report has a block the new one does not
                 removeStoredBlock(oldReport[oldPos], node);
                 oldPos++;
             } else {
+                // zeng: 有新增的block
                 // The new report has a block the old one does not
                 addStoredBlock(newReport[newPos], node);
                 newPos++;
             }
         }
+        // zeng: 剩下的全是删除的block
         while (oldReport != null && oldPos < oldReport.length) {
             // The old report has a block the new one does not
             removeStoredBlock(oldReport[oldPos], node);
             oldPos++;
         }
+        // zeng: 剩下的全是新增的block
         while (newReport != null && newPos < newReport.length) {
             // The new report has a block the old one does not
             addStoredBlock(newReport[newPos], node);
             newPos++;
         }
 
+        // zeng: 更新DatanodeInfo.blocks
         //
         // Modify node so it has the new blockreport
         //
         node.updateBlocks(newReport);
+
+        // zeng: 无效的block返回给datanode进行删除
 
         //
         // We've now completely updated the node's block report profile.
@@ -1001,19 +1067,25 @@ class FSNamesystem implements FSConstants {
         for (Iterator it = node.getBlockIterator(); it.hasNext(); ) {
             Block b = (Block) it.next();
 
-            if (!dir.isValidBlock(b) && !pendingCreateBlocks.contains(b)) {
+            if (!dir.isValidBlock(b) && !pendingCreateBlocks.contains(b)) { // zeng: 无效的block
                 LOG.info("Obsoleting block " + b);
                 obsolete.add(b);
             }
         }
+
         return (Block[]) obsolete.toArray(new Block[obsolete.size()]);
     }
+
+    // zeng: 加入  block -> datanode set 映射中
 
     /**
      * Modify (block-->datanode) map.  Remove block from set of
      * needed replications if this takes care of the problem.
      */
     synchronized void addStoredBlock(Block block, DatanodeInfo node) {
+
+        // zeng:  block -> datanode set 映射, 加入 datanode set中
+
         TreeSet containingNodes = (TreeSet) blocksMap.get(block);
         if (containingNodes == null) {
             containingNodes = new TreeSet();
@@ -1026,7 +1098,10 @@ class FSNamesystem implements FSConstants {
         }
 
         synchronized (neededReplications) {
-            if (dir.isValidBlock(block)) {
+            if (dir.isValidBlock(block)) {  // zeng: 是否是文件树中的block
+
+                // zeng: 副本足够了就从neededReplications中移除, 副本不足加加入neededReplications中
+
                 if (containingNodes.size() >= this.desiredReplication) {
                     neededReplications.remove(block);
                     pendingReplications.remove(block);
@@ -1035,6 +1110,8 @@ class FSNamesystem implements FSConstants {
                         neededReplications.add(block);
                     }
                 }
+
+                // zeng: 如果block当前副本数超出, 移除多余副本
 
                 //
                 // Find how many of the containing nodes are "extra", if any.
@@ -1056,6 +1133,8 @@ class FSNamesystem implements FSConstants {
         }
     }
 
+    // zeng: 加入 `多余block副本`set 与 `要删除的block副本`set
+
     /**
      * We want a max of "maxReps" replicates for any block, but we now have too many.
      * In this method, copy enough nodes from 'srcNodes' into 'dstNodes' such that:
@@ -1066,11 +1145,14 @@ class FSNamesystem implements FSConstants {
      * kind of policy (like making sure replicates are spread across racks).
      */
     void chooseExcessReplicates(Vector nonExcess, Block b, int maxReps) {
-        while (nonExcess.size() - maxReps > 0) {
+        while (nonExcess.size() - maxReps > 0) {    // zeng: 只保留maxReps个副本
+
+            // zeng: DatanodeInfo
             int chosenNode = r.nextInt(nonExcess.size());
             DatanodeInfo cur = (DatanodeInfo) nonExcess.elementAt(chosenNode);
             nonExcess.removeElementAt(chosenNode);
 
+            // zeng: 加入 多余block副本set 中
             TreeSet excessBlocks = (TreeSet) excessReplicateMap.get(cur.getName());
             if (excessBlocks == null) {
                 excessBlocks = new TreeSet();
@@ -1078,6 +1160,7 @@ class FSNamesystem implements FSConstants {
             }
             excessBlocks.add(b);
 
+            // zeng: 加入 要删除的block副本set 中
             //
             // The 'excessblocks' tracks blocks until we get confirmation
             // that the datanode has deleted them; the only way we remove them
@@ -1096,17 +1179,21 @@ class FSNamesystem implements FSConstants {
         }
     }
 
+    // zeng: 从  block -> datanode set 映射的 set中 移除
+
     /**
      * Modify (block-->datanode) map.  Possibly generate
      * replication tasks, if the removed block is still valid.
      */
     synchronized void removeStoredBlock(Block block, DatanodeInfo node) {
+        // zeng: 从 block -> datanode set 映射 的set中移除
         TreeSet containingNodes = (TreeSet) blocksMap.get(block);
         if (containingNodes == null || !containingNodes.contains(node)) {
             throw new IllegalArgumentException("No machine mapping found for block " + block + ", which should be at node " + node);
         }
         containingNodes.remove(node);
 
+        // zeng: block移除可能是因为datanode出问题导致的, 这种情况下block要加进neededReplications等待复制
         //
         // It's possible that the block was removed because of a datanode
         // failure.  If the block is still valid, check if replication is
@@ -1119,6 +1206,7 @@ class FSNamesystem implements FSConstants {
             }
         }
 
+        // zeng: block已经移除, 那么ta肯定不会在excessReplicateMap(datanode名称 -> 多余block副本 set)里
         //
         // We've removed a block from a node, so it's definitely no longer
         // in "excess" there.
@@ -1132,19 +1220,27 @@ class FSNamesystem implements FSConstants {
         }
     }
 
+    // zeng: datanode已经完成block存储, namenode做相关处理
+
     /**
      * The given node is reporting that it received a certain block.
      */
     public synchronized void blockReceived(Block block, UTF8 name) {
+        // zeng: 根据名称获取DatanodeInfo对象
         DatanodeInfo node = (DatanodeInfo) datanodeMap.get(name);
+
         if (node == null) {
             throw new IllegalArgumentException("Unexpected exception.  Got blockReceived message from node " + name + ", but there is no info for " + name);
         }
+
+        // zeng: 加入  block -> datanode set 映射中
         //
         // Modify the blocks->datanode map
         // 
         addStoredBlock(block, node);
 
+
+        // zeng: 放入DatanodeInfo.blocks这个set中
         //
         // Supplement node's blockreport
         //
@@ -1190,18 +1286,25 @@ class FSNamesystem implements FSConstants {
     //
     /////////////////////////////////////////////////////////
 
+    // zeng: 取出 要删除的block副本set
+
     /**
      * Check if there are any recently-deleted blocks a datanode should remove.
      */
     public synchronized Block[] blocksToInvalidate(UTF8 sender) {
+        // zeng: 取出 要删除的block副本set
         Vector invalidateSet = (Vector) recentInvalidateSets.remove(sender);
+
         if (invalidateSet != null) {
+
+            // zeng: 返回
             return (Block[]) invalidateSet.toArray(new Block[invalidateSet.size()]);
         } else {
             return null;
         }
     }
 
+    // zeng: 需要复制的block, 及block需要复制到哪些datanode
     /**
      * Return with a list of Block/DataNodeInfo sets, indicating
      * where various Blocks should be copied, ASAP.
@@ -1224,7 +1327,10 @@ class FSNamesystem implements FSConstants {
                 //
                 Vector replicateBlocks = new Vector();
                 Vector replicateTargetSets = new Vector();
-                for (Iterator it = neededReplications.iterator(); it.hasNext(); ) {
+
+                for (Iterator it = neededReplications.iterator(); it.hasNext(); ) { // zeng: 遍历需要复制的block
+
+                    // zeng: 不能超过datanode的复制任务上限
                     //
                     // We can only reply with 'maxXfers' or fewer blocks
                     //
@@ -1232,19 +1338,29 @@ class FSNamesystem implements FSConstants {
                         break;
                     }
 
+                    // zeng: 要复制的block
                     Block block = (Block) it.next();
                     if (!dir.isValidBlock(block)) {
                         it.remove();
                     } else {
                         TreeSet containingNodes = (TreeSet) blocksMap.get(block);
+
+                        // zeng: datanode里包括这个block
                         if (containingNodes.contains(srcNode)) {
+                            // zeng: 选择不包含这个block的datanode
                             DatanodeInfo targets[] = chooseTargets(Math.min(this.desiredReplication - containingNodes.size(), this.maxReplicationStreams - xmitsInProgress), containingNodes, null);
+
                             if (targets.length > 0) {
                                 // Build items to return
+                                // zeng: 需要复制的block
                                 replicateBlocks.add(block);
+                                // zeng: 复制到哪些datanode
                                 replicateTargetSets.add(targets);
+
+                                // zeng: 几个复制任务
                                 scheduledXfers += targets.length;
                             }
+
                         }
                     }
                 }
@@ -1257,12 +1373,15 @@ class FSNamesystem implements FSConstants {
                 //
                 if (replicateBlocks.size() > 0) {
                     int i = 0;
+
+                    // zeng: block从neededReplications中移除, 加入pendingReplications中
                     for (Iterator it = replicateBlocks.iterator(); it.hasNext(); i++) {
                         Block block = (Block) it.next();
                         DatanodeInfo targets[] = (DatanodeInfo[]) replicateTargetSets.elementAt(i);
+
                         TreeSet containingNodes = (TreeSet) blocksMap.get(block);
 
-                        if (containingNodes.size() + targets.length >= this.desiredReplication) {
+                        if (containingNodes.size() + targets.length >= this.desiredReplication) {   // zeng: 大于指定副本数
                             neededReplications.remove(block);
                             pendingReplications.add(block);
                         }
@@ -1270,19 +1389,27 @@ class FSNamesystem implements FSConstants {
                         LOG.info("Pending transfer (block " + block.getBlockName() + ") from " + srcNode.getName() + " to " + targets.length + " destinations");
                     }
 
+
                     //
                     // Build returned objects from above lists
                     //
+
+                    // zeng: `block的target列表`数组 转化为 二维数组
                     DatanodeInfo targetMatrix[][] = new DatanodeInfo[replicateTargetSets.size()][];
                     for (i = 0; i < targetMatrix.length; i++) {
                         targetMatrix[i] = (DatanodeInfo[]) replicateTargetSets.elementAt(i);
                     }
 
                     results = new Object[2];
+
+                    // zeng: 需要复制的block
                     results[0] = replicateBlocks.toArray(new Block[replicateBlocks.size()]);
+                    // zeng: block复制到哪些datanode
                     results[1] = targetMatrix;
                 }
+
             }
+
             return results;
         }
     }

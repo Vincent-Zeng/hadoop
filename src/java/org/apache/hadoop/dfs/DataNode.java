@@ -25,11 +25,18 @@ import java.util.*;
 import java.util.logging.*;
 
 /**********************************************************
+ * 一台机器可以有多个DataNode实例
+ * DataNode实例定时和NameNode通信,或者和client 与 其他DataNode通信
+ *
  * DataNode is a class (and program) that stores a set of
  * blocks for a DFS deployment.  A single deployment can
  * have one or many DataNodes.  Each DataNode communicates
  * regularly with a single NameNode.  It also communicates
  * with client code and other DataNodes from time to time.
+ *
+ * DataNode存储block
+ * client会来DataNode读取或者写入block数据
+ * DataNode还从NameNode获取 删除 或者 复制 block 的命令
  *
  * DataNodes store a series of named blocks.  The DataNode
  * allows client code to read these blocks, or to write new
@@ -37,17 +44,28 @@ import java.util.logging.*;
  * from its NameNode, delete blocks or copy blocks to/from other
  * DataNodes.
  *
+ * DataNode 其实只是维护了 `block对象 -> 字节流`这样一种映射关系而已
+ *
  * The DataNode maintains just one critical table:
  *   block-> stream of bytes (of BLOCK_SIZE or less)
+ *
+ * 映射关系存储在硬盘中.
+ * DataNode在启动时 和 定期 向NameNode 上报自己的block信息
  *
  * This info is stored on a local disk.  The DataNode
  * reports the table's contents to the NameNode upon startup
  * and every so often afterwards.
  *
+ * DataNode定时向NameNode获取对block的操作命令
+ * NameNode无法直接发送请求给DataNode, 而是DataNode请求NameNode NameNode返回信息给DataNode
+ *
  * DataNodes spend their lives in an endless loop of asking
  * the NameNode for something to do.  A NameNode cannot connect
  * to a DataNode directly; a NameNode simply returns values from
  * functions invoked by a DataNode.
+ *
+ * DataNode拥有一个server socket, client 和 其他DataNode 通过连接这个socket 来读写数据
+ * DataNode将 host:port 作为名称 上报给NameNode, NameNode在需要时将名称返回给 client 或 其他DataNode
  *
  * DataNodes maintain an open server socket so that client code 
  * or other DataNodes can read/write data.  The host/port for
@@ -234,7 +252,7 @@ public class DataNode implements FSConstants, Runnable {
                     Block blockArray[] = (Block[]) receivedBlockList.toArray(new Block[receivedBlockList.size()]);
                     receivedBlockList.removeAllElements();
 
-                    // zeng: TODO
+                    // zeng: datanode上报完成上传的 block
                     namenode.blockReceived(localName, blockArray);
                 }
 
@@ -762,7 +780,7 @@ public class DataNode implements FSConstants, Runnable {
         subThreadList = new Vector(dataDirs.length);
 
         for (int i = 0; i < dataDirs.length; i++) { // zeng: 遍历 目录 数组
-            // zeng: 每个目录创建一个DataNode实例
+            // zeng: 每个目录创建一个DataNode实例(一台机器上可以有多个datanode实例, 每个datanode要有自己的data目录)
             DataNode dn = makeInstanceForDir(dataDirs[i], conf);
 
             if (dn != null) {
