@@ -1,12 +1,12 @@
 /**
  * Copyright 2005 The Apache Software Foundation
- *
+ * <p>
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
+ * <p>
+ * http://www.apache.org/licenses/LICENSE-2.0
+ * <p>
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -32,65 +32,69 @@ import org.apache.hadoop.conf.Configuration;
  * @author Mike Cafarella
  *****************************************************************/
 public class DistributedFileSystem extends FileSystem {
-    private File workingDir = 
-      new File("/user", System.getProperty("user.name")).getAbsoluteFile();
+    private File workingDir =
+            new File("/user", System.getProperty("user.name")).getAbsoluteFile();
 
     private String name;
 
     DFSClient dfs;
 
-    /** Construct a client for the filesystem at <code>namenode</code>.
+    /**
+     * Construct a client for the filesystem at <code>namenode</code>.
      */
     public DistributedFileSystem(InetSocketAddress namenode, Configuration conf) throws IOException {
-      super(conf);
+        super(conf);
 
-      // zeng: client实例
-      this.dfs = new DFSClient(namenode, conf);
-      // zeng: name为 域名:端口
-      this.name = namenode.getHostName() + ":" + namenode.getPort();
+        // zeng: client实例
+        this.dfs = new DFSClient(namenode, conf);
+        // zeng: name为 域名:端口
+        this.name = namenode.getHostName() + ":" + namenode.getPort();
     }
 
-    public String getName() { return name; }
+    public String getName() {
+        return name;
+    }
 
     public File getWorkingDirectory() {
-      return workingDir;
+        return workingDir;
     }
-    
+
     private File makeAbsolute(File f) {
-      if (isAbsolute(f)) {
-        return f;
-      } else {
-        return new File(workingDir, f.getPath());
-      }
+        if (isAbsolute(f)) {
+            return f;
+        } else {
+            return new File(workingDir, f.getPath());
+        }
     }
-    
+
     public void setWorkingDirectory(File dir) {
-      workingDir = makeAbsolute(dir);
+        workingDir = makeAbsolute(dir);
     }
-    
+
     private UTF8 getPath(File file) {
-      String path = getDFSPath(makeAbsolute(file));
-      return new UTF8(path);
+        String path = getDFSPath(makeAbsolute(file));
+        return new UTF8(path);
     }
 
     public String[][] getFileCacheHints(File f, long start, long len) throws IOException {
-      return dfs.getHints(getPath(f), start, len);
+        return dfs.getHints(getPath(f), start, len);
     }
 
     public FSInputStream openRaw(File f) throws IOException {
-      return dfs.open(getPath(f));
+        return dfs.open(getPath(f));
     }
 
     public FSOutputStream createRaw(File f, boolean overwrite)
-      throws IOException {
-      return dfs.create(getPath(f), overwrite);
+            throws IOException {
+        // zeng: 创建dfs file outputstream
+        return dfs.create(getPath(f), overwrite);
     }
 
     /**
      * Rename files/dirs
      */
     public boolean renameRaw(File src, File dst) throws IOException {
-      return dfs.rename(getPath(src), getPath(dst));
+        return dfs.rename(getPath(src), getPath(dst));
     }
 
     /**
@@ -107,20 +111,20 @@ public class DistributedFileSystem extends FileSystem {
 
     public boolean isDirectory(File f) throws IOException {
         if (f instanceof DFSFile) {
-          return ((DFSFile)f).isDirectory();
+            return ((DFSFile) f).isDirectory();
         }
         return dfs.isDirectory(getPath(f));
     }
 
     public boolean isAbsolute(File f) {
-      return f.isAbsolute() ||
-        f.getPath().startsWith("/") ||
-        f.getPath().startsWith("\\");
+        return f.isAbsolute() ||
+                f.getPath().startsWith("/") ||
+                f.getPath().startsWith("\\");
     }
 
     public long getLength(File f) throws IOException {
         if (f instanceof DFSFile) {
-          return ((DFSFile)f).length();
+            return ((DFSFile) f).length();
         }
 
         DFSFileInfo info[] = dfs.listFiles(getPath(f));
@@ -145,7 +149,7 @@ public class DistributedFileSystem extends FileSystem {
     }
 
     public void lock(File f, boolean shared) throws IOException {
-        dfs.lock(getPath(f), ! shared);
+        dfs.lock(getPath(f), !shared);
     }
 
     public void release(File f) throws IOException {
@@ -161,10 +165,10 @@ public class DistributedFileSystem extends FileSystem {
         doFromLocalFile(src, dst, false);
     }
 
-    // zeng: TODO
+    // zeng: 从本地复制文件到dfs
     private void doFromLocalFile(File src, File dst, boolean deleteSource) throws IOException {
         if (exists(dst)) {  // zeng: 目录是否存在
-            if (! isDirectory(dst)) {   // zeng: TODO
+            if (!isDirectory(dst)) {   // zeng: 不是目录
                 throw new IOException("Target " + dst + " already exists");
             } else {
                 // zeng: 拼 目标文件名
@@ -176,44 +180,57 @@ public class DistributedFileSystem extends FileSystem {
             }
         }
 
+        // zeng: LocalFileSystem
         FileSystem localFs = getNamed("local", getConf());
 
-        if (localFs.isDirectory(src)) {
+        if (localFs.isDirectory(src)) { // zeng: 是目录
+            // zeng: 目录节点加入文件树
             mkdirs(dst);
+
+            // zeng: 目录下文件
             File contents[] = localFs.listFiles(src);
+
             for (int i = 0; i < contents.length; i++) {
+                // zeng: 复制目录下每个节点
                 doFromLocalFile(contents[i], new File(dst, contents[i].getName()), deleteSource);
             }
         } else {
+            // zeng: buf
             byte buf[] = new byte[getConf().getInt("io.file.buffer.size", 4096)];
 
+            // zeng: local file input stream
             InputStream in = localFs.open(src);
 
             try {
+                // zeng: dfs file outputstream
                 OutputStream out = create(dst);
 
                 try {
+                    // zeng: 读取到buf
                     int bytesRead = in.read(buf);
-                    while (bytesRead >= 0) {
+
+                    while (bytesRead >= 0) {    // zeng: 直到读完
+                        // zeng: 发送buf, 最终会调用到DFSOutputStream.write
                         out.write(buf, 0, bytesRead);
                         bytesRead = in.read(buf);
                     }
-
                 } finally {
+                    // zeng: 最终会调用到 DFSOutputStream.close
                     out.close();
                 }
             } finally {
                 in.close();
-            } 
+            }
         }
 
+        // zeng: 删除本地文件
         if (deleteSource)
             localFs.delete(src);
     }
 
     public void copyToLocalFile(File src, File dst) throws IOException {
         if (dst.exists()) {
-            if (! dst.isDirectory()) {
+            if (!dst.isDirectory()) {
                 throw new IOException("Target " + dst + " already exists");
             } else {
                 dst = new File(dst, src.getName());
@@ -248,7 +265,7 @@ public class DistributedFileSystem extends FileSystem {
                 }
             } finally {
                 in.close();
-            } 
+            }
         }
     }
 
@@ -293,77 +310,85 @@ public class DistributedFileSystem extends FileSystem {
     DFSClient getClient() {
         return dfs;
     }
-    
+
     private String getDFSPath(File f) {
-      List l = new ArrayList();
-      l.add(f.getName());
-      File parent = f.getParentFile();
-      while (parent != null) {
-        l.add(parent.getName());
-        parent = parent.getParentFile();
-      }
-      StringBuffer path = new StringBuffer();
-      path.append(l.get(l.size() - 1));
-      for (int i = l.size() - 2; i >= 0; i--) {
-        path.append(DFSFile.DFS_FILE_SEPARATOR);
-        path.append(l.get(i));
-      }
-      if (isAbsolute(f) && path.length() == 0) {
-        path.append(DFSFile.DFS_FILE_SEPARATOR);
-      }
-      return path.toString();
+        List l = new ArrayList();
+        l.add(f.getName());
+        File parent = f.getParentFile();
+        while (parent != null) {
+            l.add(parent.getName());
+            parent = parent.getParentFile();
+        }
+        StringBuffer path = new StringBuffer();
+        path.append(l.get(l.size() - 1));
+        for (int i = l.size() - 2; i >= 0; i--) {
+            path.append(DFSFile.DFS_FILE_SEPARATOR);
+            path.append(l.get(i));
+        }
+        if (isAbsolute(f) && path.length() == 0) {
+            path.append(DFSFile.DFS_FILE_SEPARATOR);
+        }
+        return path.toString();
     }
 
     public void reportChecksumFailure(File f, FSInputStream in,
                                       long start, long length, int crc) {
-      
-      // ignore for now, causing task to fail, and hope that when task is
-      // retried it gets a different copy of the block that is not corrupt.
 
-      // FIXME: we should move the bad block(s) involved to a bad block
-      // directory on their datanode, and then re-replicate the blocks, so that
-      // no data is lost. a task may fail, but on retry it should succeed.
+        // ignore for now, causing task to fail, and hope that when task is
+        // retried it gets a different copy of the block that is not corrupt.
+
+        // FIXME: we should move the bad block(s) involved to a bad block
+        // directory on their datanode, and then re-replicate the blocks, so that
+        // no data is lost. a task may fail, but on retry it should succeed.
     }
 
     public long getBlockSize() {
-      return dfs.BLOCK_SIZE;
+        return dfs.BLOCK_SIZE;
     }
 
-    /** Return the total raw capacity of the filesystem, disregarding
-     * replication .*/
-    public long getRawCapacity() throws IOException{
+    /**
+     * Return the total raw capacity of the filesystem, disregarding
+     * replication .
+     */
+    public long getRawCapacity() throws IOException {
         return dfs.totalRawCapacity();
     }
 
-    /** Return the total raw used space in the filesystem, disregarding
-     * replication .*/
-    public long getRawUsed() throws IOException{
+    /**
+     * Return the total raw used space in the filesystem, disregarding
+     * replication .
+     */
+    public long getRawUsed() throws IOException {
         return dfs.totalRawUsed();
     }
 
-    /** Return the total size of all files in the filesystem.*/
-    public long getUsed()throws IOException{
+    /**
+     * Return the total size of all files in the filesystem.
+     */
+    public long getUsed() throws IOException {
         long used = 0;
         DFSFileInfo dfsFiles[] = dfs.listFiles(getPath(new File("/")));
-        for(int i=0;i<dfsFiles.length;i++){
+        for (int i = 0; i < dfsFiles.length; i++) {
             used += dfsFiles[i].getContentsLen();
         }
         return used;
     }
 
-    /** Return statistics for each datanode.*/
+    /**
+     * Return statistics for each datanode.
+     */
     public DataNodeReport[] getDataNodeStats() throws IOException {
-      DatanodeInfo[]  dnReport = dfs.datanodeReport();
-      DataNodeReport[] reports = new DataNodeReport[dnReport.length];
+        DatanodeInfo[] dnReport = dfs.datanodeReport();
+        DataNodeReport[] reports = new DataNodeReport[dnReport.length];
 
-      for (int i = 0; i < dnReport.length; i++) {
-        reports[i] = new DataNodeReport();
-        reports[i].name = dnReport[i].getName().toString();
-        reports[i].host = dnReport[i].getHost().toString();
-        reports[i].capacity = dnReport[i].getCapacity();
-        reports[i].remaining = dnReport[i].getRemaining();
-        reports[i].lastUpdate = dnReport[i].lastUpdate();
-      }
-      return reports;
+        for (int i = 0; i < dnReport.length; i++) {
+            reports[i] = new DataNodeReport();
+            reports[i].name = dnReport[i].getName().toString();
+            reports[i].host = dnReport[i].getHost().toString();
+            reports[i].capacity = dnReport[i].getCapacity();
+            reports[i].remaining = dnReport[i].getRemaining();
+            reports[i].lastUpdate = dnReport[i].lastUpdate();
+        }
+        return reports;
     }
 }

@@ -105,6 +105,7 @@ class DFSClient implements FSConstants {
     }
 
     public FSOutputStream create(UTF8 src, boolean overwrite) throws IOException {
+        // zeng: dfs outputstream
         return new DFSOutputStream(src, overwrite);
     }
 
@@ -244,6 +245,7 @@ class DFSClient implements FSConstants {
     }
 
     // zeng: TODO 租约?
+
     /***************************************************************
      * Periodically check in with the namenode and renew all the leases
      * when the lease period is half over.
@@ -566,17 +568,25 @@ class DFSClient implements FSConstants {
         public DFSOutputStream(UTF8 src, boolean overwrite) throws IOException {
             this.src = src;
             this.overwrite = overwrite;
+
+            // zeng: 创建一个本地文件作为备份文件
             this.backupFile = newBackupFile();
             this.backupStream = new FileOutputStream(backupFile);
         }
 
+        // zeng: 创建一个本地文件作为备份文件
         private File newBackupFile() throws IOException {
+
+            // zeng: dfs data dir /  tmp / client-randomid
             File result = conf.getFile("dfs.data.dir",
                     "tmp" + File.separator +
                             "client-" + Math.abs(r.nextLong()));
             result.deleteOnExit();
+
             return result;
         }
+
+        // zeng: next block outputstream
 
         /**
          * Open a DataOutputStream to a DataNode so that it can be written to.
@@ -592,13 +602,17 @@ class DFSClient implements FSConstants {
                 long localstart = System.currentTimeMillis();
                 boolean blockComplete = false;
                 LocatedBlock lb = null;
-                while (!blockComplete) {
-                    if (firstTime) {
+
+                while (!blockComplete) {    // zeng: 直到分配到
+                    if (firstTime) {    // zeng: 第一个block
+                        // zeng: 为新文件 选择DatanodeInfo 和 分配第一个block
                         lb = namenode.create(src.toString(), clientName.toString(), localName, overwrite);
                     } else {
+                        // zeng: 为文件增加一个block 并为block选择DatanodeInfo
                         lb = namenode.addBlock(src.toString(), localName);
                     }
 
+                    // zeng: 直到分配到
                     if (lb == null) {
                         try {
                             Thread.sleep(400);
@@ -612,17 +626,22 @@ class DFSClient implements FSConstants {
                     }
                 }
 
+                // zeng: block
                 block = lb.getBlock();
+                // zeng: DatanodeInfo 数组
                 DatanodeInfo nodes[] = lb.getLocations();
 
                 //
                 // Connect to first DataNode in the list.  Abort if this fails.
                 //
+                // zeng: 第一个Datanode
                 InetSocketAddress target = DataNode.createSocketAddr(nodes[0].getName().toString());
                 try {
+                    // zeng: datanode socket
                     s = new Socket();
                     s.connect(target, READ_TIMEOUT);
                     s.setSoTimeout(READ_TIMEOUT);
+
                 } catch (IOException ie) {
                     // Connection failed.  Let's wait a little bit and retry
                     try {
@@ -644,19 +663,35 @@ class DFSClient implements FSConstants {
                 //
                 // Xmit header info to datanode
                 //
+                // zeng: socket outputstream
                 DataOutputStream out = new DataOutputStream(new BufferedOutputStream(s.getOutputStream()));
+
+                // zeng: 发送操作码
                 out.write(OP_WRITE_BLOCK);
+                // zeng: 发送shouldReportBlock
                 out.writeBoolean(false);
+                // zeng: 发送block对象
                 block.write(out);
+
+                // zeng: 发送DatanodeInfo数组
                 out.writeInt(nodes.length);
                 for (int i = 0; i < nodes.length; i++) {
                     nodes[i].write(out);
                 }
+
+                // zeng: 发送输出编码
                 out.write(CHUNKED_ENCODING);
+
+                // zeng: 重置bytesWrittenToBlock
                 bytesWrittenToBlock = 0;
+
+                // zeng: 设置新block的outputstream
                 blockStream = out;
+                // zeng:  设置新block的inputstream
                 blockReplyStream = new DataInputStream(new BufferedInputStream(s.getInputStream()));
             } while (retry);
+
+            // zeng: 下一次
             firstTime = false;
         }
 
@@ -691,17 +726,24 @@ class DFSClient implements FSConstants {
             if (closed) {
                 throw new IOException("Stream closed");
             }
+
             while (len > 0) {
+
                 int remaining = BUFFER_SIZE - pos;
+
                 int toWrite = Math.min(remaining, len);
+
+                // zeng: 复制到outBuf
                 System.arraycopy(b, off, outBuf, pos, toWrite);
+
+                // zeng: 一些index
                 pos += toWrite;
                 off += toWrite;
                 len -= toWrite;
                 filePos += toWrite;
 
-                if ((bytesWrittenToBlock + pos >= BLOCK_SIZE) ||
-                        (pos == BUFFER_SIZE)) {
+                // zeng: 如果outBuf已经满了 或者 本次block过程 所需的数据 已经达到, 执行flush
+                if ((bytesWrittenToBlock + pos >= BLOCK_SIZE) || (pos == BUFFER_SIZE)) {
                     flush();
                 }
             }
@@ -715,14 +757,15 @@ class DFSClient implements FSConstants {
                 throw new IOException("Stream closed");
             }
 
-            if (bytesWrittenToBlock + pos >= BLOCK_SIZE) {
-                flushData(BLOCK_SIZE - bytesWrittenToBlock);
+            if (bytesWrittenToBlock + pos >= BLOCK_SIZE) {  // zeng: 如果 本次block过程 所需的数据 已经达到
+                flushData(BLOCK_SIZE - bytesWrittenToBlock);    // zeng: 本block过程中剩下要发送的数据
             }
 
-            if (bytesWrittenToBlock == BLOCK_SIZE) {
+            if (bytesWrittenToBlock == BLOCK_SIZE) {    // zeng: 本次block过程的数据 已经全部写入backup file
                 endBlock();
             }
 
+            // zeng: flush outBuf
             flushData(pos);
         }
 
@@ -731,22 +774,31 @@ class DFSClient implements FSConstants {
          * but no more bytes than the indicated number.
          */
         private synchronized void flushData(int maxPos) throws IOException {
+            // zeng: 这次flush中 要把outBuf什么位置之前 的字节发送出去
             int workingPos = Math.min(pos, maxPos);
 
             if (workingPos > 0) {
                 //
                 // To the local block backup, write just the bytes
                 //
+                // zeng: 只是写到backup file, endBlock时再统一从backup file读取发送
                 backupStream.write(outBuf, 0, workingPos);
 
                 //
                 // Track position
                 //
+                // zeng: 这个 block 过程 累计写入多少字节到了backup file
                 bytesWrittenToBlock += workingPos;
+
+                // zeng: outBuf里剩下没写的字节 挪到 数组开头
                 System.arraycopy(outBuf, workingPos, outBuf, 0, pos - workingPos);
+
+                // zeng: outBuf写到什么位置
                 pos -= workingPos;
             }
         }
+
+        // zeng: 发送block数据, 发送成功则通知namenode
 
         /**
          * We're done writing to the current block.
@@ -762,17 +814,28 @@ class DFSClient implements FSConstants {
             //
             boolean mustRecover = true;
             while (mustRecover) {
+                // zeng: block outputstream
                 nextBlockOutputStream();
+
+                // zeng: backup file inputstream
                 InputStream in = new FileInputStream(backupFile);
                 try {
+                    // zeng: 读到buf
                     byte buf[] = new byte[BUFFER_SIZE];
                     int bytesRead = in.read(buf);
-                    while (bytesRead > 0) {
+
+                    while (bytesRead > 0) { // zeng: 直到读完backup file
+                        // zeng: 发送buf len
                         blockStream.writeLong((long) bytesRead);
+                        // zeng: 发送buf
                         blockStream.write(buf, 0, bytesRead);
+                        // zeng: 读到buf
                         bytesRead = in.read(buf);
                     }
+
+                    // zeng: 结束本次block
                     internalClose();
+
                     mustRecover = false;
                 } catch (IOException ie) {
                     handleSocketException(ie);
@@ -781,6 +844,7 @@ class DFSClient implements FSConstants {
                 }
             }
 
+            // zeng: 清空backup file内容
             //
             // Delete local backup, start new one
             //
@@ -790,21 +854,32 @@ class DFSClient implements FSConstants {
             bytesWrittenToBlock = 0;
         }
 
+
+        // zeng: 结束本次block
+
         /**
          * Close down stream to remote datanode.
          */
         private synchronized void internalClose() throws IOException {
+            // zeng: 表示结束
             blockStream.writeLong(0);
+            // zeng: flush
             blockStream.flush();
 
+            // zeng: block是否上传完成
             long complete = blockReplyStream.readLong();
+
+            // zeng: 报错
             if (complete != WRITE_COMPLETE) {
                 LOG.info("Did not receive WRITE_COMPLETE flag: " + complete);
                 throw new IOException("Did not receive WRITE_COMPLETE_FLAG: " + complete);
             }
 
+            // zeng: 读取LocatedBlock(block对象 和 block已上传到哪些datablock)
             LocatedBlock lb = new LocatedBlock();
             lb.readFields(blockReplyStream);
+
+            // zeng: 上报 LocatedBlock 给 namenode
             namenode.reportWrittenBlock(lb);
 
             s.close();
@@ -833,6 +908,7 @@ class DFSClient implements FSConstants {
                 throw new IOException("Stream closed");
             }
 
+            // zeng: 虽然没有达到block大小, 但是文件已经读完了, 所以也要结束本次block过程
             flush();
             if (filePos == 0 || bytesWrittenToBlock != 0) {
                 try {
@@ -854,8 +930,10 @@ class DFSClient implements FSConstants {
 
             long localstart = System.currentTimeMillis();
             boolean fileComplete = false;
-            while (!fileComplete) {
+            while (!fileComplete) { // zeng: 直到加入成功
+                // zeng: 设置block的len, 将文件加入文件树
                 fileComplete = namenode.complete(src.toString(), clientName.toString());
+
                 if (!fileComplete) {
                     try {
                         Thread.sleep(400);
@@ -866,6 +944,7 @@ class DFSClient implements FSConstants {
                     }
                 }
             }
+
             closed = true;
         }
     }

@@ -1,12 +1,12 @@
 /**
  * Copyright 2005 The Apache Software Foundation
- *
+ * <p>
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
+ * <p>
+ * http://www.apache.org/licenses/LICENSE-2.0
+ * <p>
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -37,7 +37,7 @@ import org.apache.hadoop.util.LogFormatter;
  * Hadoop DFS is a multi-machine system that appears as a single
  * disk.  It's useful because of its fault tolerance and potentially
  * very large capacity.
- * 
+ *
  * <p>
  * The local implementation is {@link LocalFileSystem} and distributed
  * implementation is {@link DistributedFileSystem}.
@@ -47,6 +47,7 @@ public abstract class FileSystem extends Configured {
     public static final Logger LOG = LogFormatter.getLogger("org.apache.hadoop.dfs.DistributedFileSystem");
 
     private static final HashMap NAME_TO_FS = new HashMap();
+
     /**
      * Parse the cmd-line args, starting at i.  Remove consumed args
      * from array.  We expect param in the form:
@@ -56,10 +57,10 @@ public abstract class FileSystem extends Configured {
      */
     public static FileSystem parseArgs(String argv[], int i, Configuration conf) throws IOException {
         /**
-        if (argv.length - i < 1) {
-            throw new IOException("Must indicate filesystem type for DFS");
-        }
-        */
+         if (argv.length - i < 1) {
+         throw new IOException("Must indicate filesystem type for DFS");
+         }
+         */
         int orig = i;
         FileSystem fs = null;
         String cmd = argv[i];
@@ -76,7 +77,7 @@ public abstract class FileSystem extends Configured {
         } else {
             // zeng: 使用配置文件中指定的文件系统
             fs = get(conf);                          // using default
-            LOG.info("No FS indicated, using default:"+fs.getName());
+            LOG.info("No FS indicated, using default:" + fs.getName());
 
         }
 
@@ -88,39 +89,51 @@ public abstract class FileSystem extends Configured {
         return fs;
     }
 
-    /** Returns the configured filesystem implementation.*/
+    /**
+     * Returns the configured filesystem implementation.
+     */
     public static FileSystem get(Configuration conf) throws IOException {
-      return getNamed(conf.get("fs.default.name", "local"), conf);
+        return getNamed(conf.get("fs.default.name", "local"), conf);
     }
 
-    /** Returns a name for this filesystem, suitable to pass to {@link
-     * FileSystem#getNamed(String,Configuration)}.*/
+    /**
+     * Returns a name for this filesystem, suitable to pass to {@link
+     * FileSystem#getNamed(String, Configuration)}.
+     */
     public abstract String getName();
-  
-    /** Returns a named filesystem.  Names are either the string "local" or a
-     * host:port pair, naming an DFS name server.*/
+
+    /**
+     * Returns a named filesystem.  Names are either the string "local" or a
+     * host:port pair, naming an DFS name server.
+     */
     public static FileSystem getNamed(String name, Configuration conf) throws IOException {
-      FileSystem fs = (FileSystem)NAME_TO_FS.get(name);
-      if (fs == null) {
-        if ("local".equals(name)) {
-          fs = new LocalFileSystem(conf);
-        } else {
-          fs = new DistributedFileSystem(DataNode.createSocketAddr(name), conf);
+        // zeng: 缓存
+        FileSystem fs = (FileSystem) NAME_TO_FS.get(name);
+
+        if (fs == null) {
+            if ("local".equals(name)) {
+                fs = new LocalFileSystem(conf);
+            } else {
+                fs = new DistributedFileSystem(DataNode.createSocketAddr(name), conf);
+            }
+            NAME_TO_FS.put(name, fs);
         }
-        NAME_TO_FS.put(name, fs);
-      }
-      return fs;
+        return fs;
     }
 
-    /** Return the name of the checksum file associated with a file.*/
+    /**
+     * Return the name of the checksum file associated with a file.
+     */
     public static File getChecksumFile(File file) {
-      return new File(file.getParentFile(), "."+file.getName()+".crc");
+        return new File(file.getParentFile(), "." + file.getName() + ".crc");
     }
 
-    /** Return true iff file is a checksum file name.*/
+    /**
+     * Return true iff file is a checksum file name.
+     */
     public static boolean isChecksumFile(File file) {
-      String name = file.getName();
-      return name.startsWith(".") && name.endsWith(".crc");
+        String name = file.getName();
+        return name.startsWith(".") && name.endsWith(".crc");
     }
 
     ///////////////////////////////////////////////////////////////
@@ -128,36 +141,38 @@ public abstract class FileSystem extends Configured {
     ///////////////////////////////////////////////////////////////
 
     protected FileSystem(Configuration conf) {
-      super(conf);
+        super(conf);
     }
 
     /**
-     * Return a 2D array of size 1x1 or greater, containing hostnames 
-     * where portions of the given file can be found.  For a nonexistent 
+     * Return a 2D array of size 1x1 or greater, containing hostnames
+     * where portions of the given file can be found.  For a nonexistent
      * file or regions, null will be returned.
-     *
-     * This call is most helpful with DFS, where it returns 
+     * <p>
+     * This call is most helpful with DFS, where it returns
      * hostnames of machines that contain the given file.
-     *
+     * <p>
      * The FileSystem will simply return an elt containing 'localhost'.
      */
     public abstract String[][] getFileCacheHints(File f, long start, long len) throws IOException;
 
     /**
      * Opens an FSDataInputStream at the indicated File.
-     * @param f the file name to open
+     *
+     * @param f          the file name to open
      * @param bufferSize the size of the buffer to be used.
      */
     public FSDataInputStream open(File f, int bufferSize) throws IOException {
-      return new FSDataInputStream(this, f, bufferSize, getConf());
+        return new FSDataInputStream(this, f, bufferSize, getConf());
     }
-    
+
     /**
      * Opens an FSDataInputStream at the indicated File.
+     *
      * @param f the file to open
      */
     public FSDataInputStream open(File f) throws IOException {
-      return new FSDataInputStream(this, f, getConf());
+        return new FSDataInputStream(this, f, getConf());
     }
 
     /**
@@ -171,28 +186,31 @@ public abstract class FileSystem extends Configured {
      * Files are overwritten by default.
      */
     public FSDataOutputStream create(File f) throws IOException {
-      return create(f, true, getConf().getInt("io.file.buffer.size", 4096));
+        return create(f, true, getConf().getInt("io.file.buffer.size", 4096));
     }
 
     /**
      * Opens an FSDataOutputStream at the indicated File.
-     * @param f the file name to open
-     * @param overwrite if a file with this name already exists, then if true,
-     *   the file will be overwritten, and if false an error will be thrown.
+     *
+     * @param f          the file name to open
+     * @param overwrite  if a file with this name already exists, then if true,
+     *                   the file will be overwritten, and if false an error will be thrown.
      * @param bufferSize the size of the buffer to be used.
      */
     public FSDataOutputStream create(File f, boolean overwrite,
-                                      int bufferSize) throws IOException {
-      return new FSDataOutputStream(this, f, overwrite, getConf(), bufferSize);
+                                     int bufferSize) throws IOException {
+        return new FSDataOutputStream(this, f, overwrite, getConf(), bufferSize);
     }
 
-    /** Opens an OutputStream at the indicated File.
-     * @param f the file name to open
+    /**
+     * Opens an OutputStream at the indicated File.
+     *
+     * @param f         the file name to open
      * @param overwrite if a file with this name already exists, then if true,
-     *   the file will be overwritten, and if false an error will be thrown.
+     *                  the file will be overwritten, and if false an error will be thrown.
      */
     public abstract FSOutputStream createRaw(File f, boolean overwrite)
-      throws IOException;
+            throws IOException;
 
     /**
      * Creates the given File as a brand-new zero-length file.  If
@@ -205,7 +223,7 @@ public abstract class FileSystem extends Configured {
             OutputStream out = createRaw(f, false);
             try {
             } finally {
-              out.close();
+                out.close();
             }
             return true;
         }
@@ -216,19 +234,19 @@ public abstract class FileSystem extends Configured {
      * or remote DFS.
      */
     public boolean rename(File src, File dst) throws IOException {
-      if (isDirectory(src)) {
-        return renameRaw(src, dst);
-      } else {
+        if (isDirectory(src)) {
+            return renameRaw(src, dst);
+        } else {
 
-        boolean value = renameRaw(src, dst);
+            boolean value = renameRaw(src, dst);
 
-        File checkFile = getChecksumFile(src);
-        if (exists(checkFile))
-          renameRaw(checkFile, getChecksumFile(dst)); // try to rename checksum
+            File checkFile = getChecksumFile(src);
+            if (exists(checkFile))
+                renameRaw(checkFile, getChecksumFile(dst)); // try to rename checksum
 
-        return value;
-      }
-      
+            return value;
+        }
+
     }
 
     /**
@@ -241,12 +259,12 @@ public abstract class FileSystem extends Configured {
      * Deletes File
      */
     public boolean delete(File f) throws IOException {
-      if (isDirectory(f)) {
-        return deleteRaw(f);
-      } else {
-        deleteRaw(getChecksumFile(f));            // try to delete checksum
-        return deleteRaw(f);
-      }
+        if (isDirectory(f)) {
+            return deleteRaw(f);
+        } else {
+            deleteRaw(getChecksumFile(f));            // try to delete checksum
+            return deleteRaw(f);
+        }
     }
 
     /**
@@ -259,46 +277,60 @@ public abstract class FileSystem extends Configured {
      */
     public abstract boolean exists(File f) throws IOException;
 
-    /** True iff the named path is a directory. */
+    /**
+     * True iff the named path is a directory.
+     */
     public abstract boolean isDirectory(File f) throws IOException;
 
-    /** True iff the named path is a regular file. */
+    /**
+     * True iff the named path is a regular file.
+     */
     public boolean isFile(File f) throws IOException {
-        if (exists(f) && ! isDirectory(f)) {
+        if (exists(f) && !isDirectory(f)) {
             return true;
         } else {
             return false;
         }
     }
-    
-    /** True iff the named path is absolute. */
+
+    /**
+     * True iff the named path is absolute.
+     */
     public abstract boolean isAbsolute(File f);
 
-    /** The number of bytes in a file. */
+    /**
+     * The number of bytes in a file.
+     */
     public abstract long getLength(File f) throws IOException;
 
-    /** List files in a directory. */
+    /**
+     * List files in a directory.
+     */
     public File[] listFiles(File f) throws IOException {
-      return listFiles(f, new FileFilter() {
-          public boolean accept(File file) {
-            return !isChecksumFile(file);
-          }
+        return listFiles(f, new FileFilter() {
+            public boolean accept(File file) {
+                return !isChecksumFile(file);
+            }
         });
     }
 
-    /** List files in a directory. */
+    /**
+     * List files in a directory.
+     */
     public abstract File[] listFilesRaw(File f) throws IOException;
 
-    /** Filter files in a directory. */
+    /**
+     * Filter files in a directory.
+     */
     public File[] listFiles(File f, FileFilter filter) throws IOException {
         Vector results = new Vector();
         File listing[] = listFilesRaw(f);
         if (listing != null) {
-          for (int i = 0; i < listing.length; i++) {
-            if (filter.accept(listing[i])) {
-              results.add(listing[i]);
+            for (int i = 0; i < listing.length; i++) {
+                if (filter.accept(listing[i])) {
+                    results.add(listing[i]);
+                }
             }
-          }
         }
         return (File[]) results.toArray(new File[results.size()]);
     }
@@ -306,16 +338,18 @@ public abstract class FileSystem extends Configured {
     /**
      * Set the current working directory for the given file system.
      * All relative paths will be resolved relative to it.
+     *
      * @param new_dir
      */
     public abstract void setWorkingDirectory(File new_dir);
-    
+
     /**
      * Get the current working directory for the given file system
+     *
      * @return the directory pathname
      */
     public abstract File getWorkingDirectory();
-    
+
     /**
      * Make the given file and all non-existent parents into
      * directories.
@@ -374,7 +408,7 @@ public abstract class FileSystem extends Configured {
     public abstract void completeLocalOutput(File fsOutputFile, File tmpLocalFile) throws IOException;
 
     /**
-     * Returns a local File that the user can read from.  The caller 
+     * Returns a local File that the user can read from.  The caller
      * provides both the eventual FS target name and the local working
      * file.  If the FS is local, we read directly from the source.  If
      * the FS is remote, we write data into the tmp local area.
@@ -397,18 +431,21 @@ public abstract class FileSystem extends Configured {
 
     /**
      * Report a checksum error to the file system.
-     * @param f the file name containing the error
-     * @param in the stream open on the file
-     * @param start the position of the beginning of the bad data in the file
+     *
+     * @param f      the file name containing the error
+     * @param in     the stream open on the file
+     * @param start  the position of the beginning of the bad data in the file
      * @param length the length of the bad data in the file
-     * @param crc the expected CRC32 of the data
+     * @param crc    the expected CRC32 of the data
      */
     public abstract void reportChecksumFailure(File f, FSInputStream in,
                                                long start, long length,
                                                int crc);
 
-    /** Return the number of bytes that large input files should be optimally
-     * be split into to minimize i/o time. */
+    /**
+     * Return the number of bytes that large input files should be optimally
+     * be split into to minimize i/o time.
+     */
     public abstract long getBlockSize();
 
 }

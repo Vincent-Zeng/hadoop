@@ -76,8 +76,11 @@ class LocatedBlock implements Writable {
     }
 
     public void readFields(DataInput in) throws IOException {
+        // zeng: block
         this.b = new Block();
         b.readFields(in);
+
+        // zeng: DatanodeInfo 数组
         int count = in.readInt();
         this.locs = new DatanodeInfo[count];
         for (int i = 0; i < locs.length; i++) {
