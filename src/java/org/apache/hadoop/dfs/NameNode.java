@@ -437,6 +437,7 @@ public class NameNode implements ClientProtocol, DatanodeProtocol, FSConstants {
         // Ask to perform pending transfers, if any
         //
         // zeng: xmitsInProgress: datanode现有多少个block复制任务
+        // zeng: 需要复制的block, 及block需要复制到哪些datanode
         Object xferResults[] = namesystem.pendingTransfers(new DatanodeInfo(new UTF8(sender)), xmitsInProgress);
         if (xferResults != null) {
             return new BlockCommand((Block[]) xferResults[0], (DatanodeInfo[][]) xferResults[1]);

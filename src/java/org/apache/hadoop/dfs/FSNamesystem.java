@@ -176,7 +176,7 @@ class FSNamesystem implements FSConstants {
         this.desiredReplication = conf.getInt("dfs.replication", 3);
         this.maxReplication = desiredReplication;
 
-        // zeng: TODO
+        // zeng: 一个datanode同时最多处理多少个复制任务
         this.maxReplicationStreams = conf.getInt("dfs.max-repl-streams", 2);
 
         // zeng: block最少副本
@@ -195,6 +195,8 @@ class FSNamesystem implements FSConstants {
         synchronized (this) {
             fsRunning = false;
         }
+
+        // zeng: fsRunning为false后, 心跳检测线程会退出无限循环,这里等待3s让它们能完全退出
         try {
             hbthread.join(3000);
         } catch (InterruptedException ie) {
@@ -945,8 +947,9 @@ class FSNamesystem implements FSConstants {
          */
         public void run() {
             while (fsRunning) {
-                // zeng: TODO
+                // zeng: 心跳检测
                 heartbeatCheck();
+
                 try {
                     Thread.sleep(heartBeatRecheck);
                 } catch (InterruptedException ie) {
@@ -965,19 +968,28 @@ class FSNamesystem implements FSConstants {
 
             while ((heartbeats.size() > 0) &&
                     ((nodeInfo = (DatanodeInfo) heartbeats.first()) != null) &&
-                    (nodeInfo.lastUpdate() < System.currentTimeMillis() - EXPIRE_INTERVAL)) {
+                    (nodeInfo.lastUpdate() < System.currentTimeMillis() - EXPIRE_INTERVAL)
+            ) { // zeng: 10分钟没心跳
                 LOG.info("Lost heartbeat for " + nodeInfo.getName());
 
+                // zeng: 从heartbeats中移除
                 heartbeats.remove(nodeInfo);
+
+                // zeng: 从 datanode名称 -> DatanodeInfo对象 映射 中移除
                 synchronized (datanodeMap) {
                     datanodeMap.remove(nodeInfo.getName());
                 }
+
+                // zeng: 更新总容量
                 totalCapacity -= nodeInfo.getCapacity();
+                // zeng: 更新剩余容量
                 totalRemaining -= nodeInfo.getRemaining();
 
+                // zeng: 这个datanode下所有的block
                 Block deadblocks[] = nodeInfo.getBlocks();
                 if (deadblocks != null) {
                     for (int i = 0; i < deadblocks.length; i++) {
+                        // zeng: 从  block -> datanode set 映射的 set中 移除
                         removeStoredBlock(deadblocks[i], nodeInfo);
                     }
                 }
@@ -1305,6 +1317,7 @@ class FSNamesystem implements FSConstants {
     }
 
     // zeng: 需要复制的block, 及block需要复制到哪些datanode
+
     /**
      * Return with a list of Block/DataNodeInfo sets, indicating
      * where various Blocks should be copied, ASAP.

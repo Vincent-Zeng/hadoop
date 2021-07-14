@@ -21,7 +21,8 @@ import java.util.*;
 import org.apache.hadoop.fs.*;
 import org.apache.hadoop.conf.*;
 
-// zeng: TODO
+// zeng: 管理 block 数据, 每个block数据都是 本地文件系统中的一个文件
+
 /**************************************************
  * FSDataset manages a set of data blocks.  Each block
  * has a unique name and an extent on disk.
@@ -40,6 +41,7 @@ class FSDataset implements FSConstants {
         FSDir children[];
 
         /**
+         *
          */
         public FSDir(File dir) {
             this.dir = dir;
@@ -47,32 +49,40 @@ class FSDataset implements FSConstants {
         }
 
         /**
+         *
          */
         public File getDirName() {
             return dir;
         }
 
         /**
+         *
          */
         public FSDir[] getChildren() {
             return children;
         }
 
+        // zeng: 加入block文件树中
         /**
+         *
          */
         public void addBlock(Block b, File src) {
             addBlock(b, src, b.getBlockId(), 0);
         }
 
+        // zeng: 加入block文件树中
         /**
+         *
          */
         void addBlock(Block b, File src, long blkid, int depth) {
             //
             // Add to the local dir, if no child dirs
             //
             if (children == null) {
+                // zeng: 把 tmp/block 文件 移动为 data/block
                 src.renameTo(new File(dir, b.getBlockName()));
 
+                // zeng: TODO 用来把block文件存储到data的子目录下 免得一级目录太大?
                 //
                 // Test whether this dir's contents should be busted 
                 // up into subdirs.
@@ -116,8 +126,10 @@ class FSDataset implements FSConstants {
                 // Find subdir
                 children[getHalfByte(blkid, depth)].addBlock(b, src, blkid, depth + 1);
             }
+
         }
 
+        // zeng: 获取这个datanode下所有的block
         /**
          * Fill in the given blockSet with any child blocks
          * found at this node.
@@ -129,13 +141,18 @@ class FSDataset implements FSConstants {
                 }
             }
 
+            // zeng: ls
             File blockFiles[] = dir.listFiles();
+
             for (int i = 0; i < blockFiles.length; i++) {
                 if (Block.isBlockFilename(blockFiles[i])) {
+                    // zeng: block对象
                     blockSet.add(new Block(blockFiles[i], blockFiles[i].length()));
                 }
             }
         }
+
+        // zeng: block数据本地文件
 
         /**
          * Find the file that corresponds to the given Block
@@ -149,6 +166,7 @@ class FSDataset implements FSConstants {
          */
         private File getBlockFilename(Block b, long blkid, int depth) {
             if (children == null) {
+                // zeng: block数据本地文件
                 return new File(dir, b.getBlockName());
             } else {
                 // 
@@ -156,6 +174,7 @@ class FSDataset implements FSConstants {
                 // That means there are 2^4 possible children, or 16.
                 // The max depth is thus ((len(long) / 4) == 16).
                 //
+                // zeng: TODO
                 return children[getHalfByte(blkid, depth)].getBlockFilename(b, blkid, depth + 1);
             }
         }
@@ -193,16 +212,25 @@ class FSDataset implements FSConstants {
      * An FSDataset has a directory where it loads its data files.
      */
     public FSDataset(File dir, Configuration conf) throws IOException {
+        // zeng: df命令获取到的硬盘信息
         diskUsage = new DF(dir.getCanonicalPath(), conf);
+
+        // zeng: dir/data 目录
         this.data = new File(dir, "data");
+
+        // zeng: 创建目录
         if (!data.exists()) {
             data.mkdirs();
         }
+
+        // zeng: 清空 dir/tmp目录
         this.tmp = new File(dir, "tmp");
         if (tmp.exists()) {
             FileUtil.fullyDelete(tmp, conf);
         }
         this.tmp.mkdirs();
+
+        // zeng: block文件树
         this.dirTree = new FSDir(data);
     }
 
@@ -213,6 +241,7 @@ class FSDataset implements FSConstants {
         return diskUsage.getCapacity();
     }
 
+    // zeng: 还剩多少硬盘空间可用
     /**
      * Return how many bytes can still be stored in the FSDataset
      */
@@ -220,6 +249,7 @@ class FSDataset implements FSConstants {
         return ((long) Math.round(USABLE_DISK_PCT * diskUsage.getAvailable())) - reserved;
     }
 
+    // zeng: 获取block len
     /**
      * Find the block's on-disk length
      */
@@ -228,9 +258,11 @@ class FSDataset implements FSConstants {
             throw new IOException("Block " + b + " is not valid.");
         }
         File f = getFile(b);
+
         return f.length();
     }
 
+    // zeng: block file inputstream
     /**
      * Get a stream of data from the indicated block.
      */
@@ -261,6 +293,7 @@ class FSDataset implements FSConstants {
         //
         // Make sure the block isn't a valid one - we're still creating it!
         //
+        // zeng: block数据文件 是否存在
         if (isValidBlock(b)) {
             throw new IOException("Block " + b + " is valid, and cannot be written to.");
         }
@@ -273,14 +306,14 @@ class FSDataset implements FSConstants {
             //
             // Is it already in the create process?
             //
-            if (ongoingCreates.contains(b)) {
+            if (ongoingCreates.contains(b)) {   // zeng: block是否已经在写了
                 throw new IOException("Block " + b + " has already been started (though not completed), and thus cannot be created.");
             }
 
             //
             // Check if we have too little space
             //
-            if (getRemaining() < BLOCK_SIZE) {
+            if (getRemaining() < BLOCK_SIZE) {  // zeng: 剩余空间是否足够
                 throw new IOException("Insufficient space for an additional block");
             }
 
@@ -288,9 +321,12 @@ class FSDataset implements FSConstants {
             // OK, all's well.  Register the create, adjust 
             // 'reserved' size, & create file
             //
-            ongoingCreates.add(b);
-            reserved += BLOCK_SIZE;
+            ongoingCreates.add(b);  // zeng: 正在写
+            reserved += BLOCK_SIZE; // zeng: 这部分空间已经分配出去了
+
+            // zeng: dir/tmp/blockname
             f = getTmpFile(b);
+
             try {
                 if (f.exists()) {
                     throw new IOException("Unexpected problem in startBlock() for " + b + ".  File " + f + " should not be present, but is.");
@@ -299,7 +335,7 @@ class FSDataset implements FSConstants {
                 //
                 // Create the zero-length temp file
                 //
-                if (!f.createNewFile()) {
+                if (!f.createNewFile()) {   // zeng: 创建tmp文件
                     throw new IOException("Unexpected problem in startBlock() for " + b + ".  File " + f + " should be creatable, but is already present.");
                 }
             } catch (IOException ie) {
@@ -315,6 +351,7 @@ class FSDataset implements FSConstants {
         // REMIND - mjc - make this a filter stream that enforces a max
         // block size, so clients can't go crazy
         //
+        // zeng: tmp文件outputstream
         return new FileOutputStream(f);
     }
 
@@ -326,11 +363,14 @@ class FSDataset implements FSConstants {
     // we can GC it safely.
     //
 
+    // zeng: block写入完毕
     /**
      * Complete the block write!
      */
     public void finalizeBlock(Block b) throws IOException {
+        // zeng: 写好的tmp文件
         File f = getTmpFile(b);
+
         if (!f.exists()) {
             throw new IOException("No temporary file " + f + " for block " + b);
         }
@@ -343,6 +383,7 @@ class FSDataset implements FSConstants {
                 throw new IOException("Tried to finalize block " + b + ", but not in ongoingCreates table");
             }
 
+            // zeng: 设置文件大小到block对象的len中
             long finalLen = f.length();
             b.setNumBytes(finalLen);
 
@@ -351,25 +392,30 @@ class FSDataset implements FSConstants {
             // (REMIND - mjc - shame to move the file within a synch
             // section!  Maybe remove this?)
             //
+            // zeng: 加入block文件树中
             dirTree.addBlock(b, f);
 
             //
             // Done, so deregister from ongoingCreates
             //
-            if (!ongoingCreates.remove(b)) {
+            if (!ongoingCreates.remove(b)) {    // zeng: block写完了
                 throw new IOException("Tried to finalize block " + b + ", but could not find it in ongoingCreates after file-move!");
             }
+
+            // zeng: 保留的空间已经写入了
             reserved -= BLOCK_SIZE;
         }
     }
 
-    // zeng: TODO
+    // zeng: 获取这个datanode下所有block
+
     /**
      * Return a table of block data
      */
     public Block[] getBlockReport() {
         TreeSet blockSet = new TreeSet();
         dirTree.getBlockInfo(blockSet);
+
         Block blockTable[] = new Block[blockSet.size()];
         int i = 0;
         for (Iterator it = blockSet.iterator(); it.hasNext(); i++) {
@@ -377,6 +423,8 @@ class FSDataset implements FSConstants {
         }
         return blockTable;
     }
+
+    // zeng: block数据文件 是否存在
 
     /**
      * Check whether the given block is a valid one.
@@ -397,15 +445,19 @@ class FSDataset implements FSConstants {
      */
     public void invalidate(Block invalidBlks[]) throws IOException {
         for (int i = 0; i < invalidBlks.length; i++) {
+            // zeng: block file
             File f = getFile(invalidBlks[i]);
 
             // long len = f.length();
+
+            // zeng: 删除block file
             if (!f.delete()) {
                 throw new IOException("Unexpected error trying to delete block " + invalidBlks[i] + " at file " + f);
             }
         }
     }
 
+    //  zeng: get file by block object
     /**
      * Turn the block identifier into a filename.
      */
@@ -418,6 +470,7 @@ class FSDataset implements FSConstants {
      * Get the temp file, if this block is still being created.
      */
     File getTmpFile(Block b) {
+        // zeng: dir/tmp/blockname
         // REMIND - mjc - should cache this result for performance
         return new File(tmp, b.getBlockName());
     }

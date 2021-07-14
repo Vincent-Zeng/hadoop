@@ -132,7 +132,7 @@ public class DataNode implements FSConstants, Runnable {
         // zeng: namenode rpc client
         this.namenode = (DatanodeProtocol) RPC.getProxy(DatanodeProtocol.class, nameNodeAddr, conf);
 
-        // zeng: TODO
+        // zeng: block数据集
         this.data = new FSDataset(datadir, conf);
 
         ServerSocket ss = null;
@@ -152,7 +152,7 @@ public class DataNode implements FSConstants, Runnable {
         // zeng: datanode的名称用 `域名:port` 表示
         this.localName = machineName + ":" + tmpPort;
 
-        // zeng: TODO
+        // zeng: 收发block数据的服务
         this.dataXceiveServer = new Daemon(new DataXceiveServer(ss));
         this.dataXceiveServer.start();
 
@@ -162,7 +162,7 @@ public class DataNode implements FSConstants, Runnable {
         this.blockReportInterval =
                 blockReportIntervalBasis - new Random().nextInt((int) (blockReportIntervalBasis / 10));
 
-        // zeng: TODO
+        // zeng: 启动多久后才从NameNode获取命令 默认2分钟
         this.datanodeStartupPeriod =
                 conf.getLong("dfs.datanode.startupMsec", DATANODE_STARTUP_PERIOD);
     }
@@ -234,8 +234,9 @@ public class DataNode implements FSConstants, Runnable {
                     // Get back a list of local block(s) that are obsolete
                     // and can be safely GC'ed.
                     //
-                    // zeng: TODO
+                    // zeng: 获取这个datanode下所有block, 上报给namenode, 返回要删除的block
                     Block toDelete[] = namenode.blockReport(localName, data.getBlockReport());
+                    // zeng: 删除block
                     data.invalidate(toDelete);
 
                     lastBlockReport = now;
@@ -270,14 +271,17 @@ public class DataNode implements FSConstants, Runnable {
                     // Check to see if there are any block-instructions from the
                     // namenode that this datanode should perform.
                     //
-                    // zeng: TODO
+                    // zeng: 获取需要datanode对block进行的操作
                     BlockCommand cmd = namenode.getBlockwork(localName, xmitsInProgress);
 
-                    if (cmd != null && cmd.transferBlocks()) {  // zeng: TODO 用来补充副本?
+                    if (cmd != null && cmd.transferBlocks()) {  // zeng: 复制block
                         //
                         // Send a copy of a block to another datanode
                         //
+                        // zeng: 需要复制的block
                         Block blocks[] = cmd.getBlocks();
+
+                        // zeng: block需要复制到哪些datanode
                         DatanodeInfo xferTargets[][] = cmd.getTargets();
 
                         for (int i = 0; i < blocks.length; i++) {
@@ -289,15 +293,18 @@ public class DataNode implements FSConstants, Runnable {
                             } else {
                                 if (xferTargets[i].length > 0) {
                                     LOG.info("Starting thread to transfer block " + blocks[i] + " to " + xferTargets[i]);
+
+                                    // zeng: 每个block开一个线程进行复制
                                     new Daemon(new DataTransfer(xferTargets[i], blocks[i])).start();
                                 }
                             }
                         }
-                    } else if (cmd != null && cmd.invalidateBlocks()) { // zeng: TODO
+                    } else if (cmd != null && cmd.invalidateBlocks()) { // zeng: 删除block
                         //
                         // Some local block(s) are obsolete and can be 
                         // safely garbage-collected.
                         //
+                        // zeng: 删除block
                         data.invalidate(cmd.getBlocks());
                     }
                 }
@@ -317,7 +324,7 @@ public class DataNode implements FSConstants, Runnable {
         }
     }
 
-    // zeng: TODO
+    // zeng: 收发block数据的服务. 没用rpc机制.
 
     /**
      * Server used for receiving/sending a block of data.
@@ -339,8 +346,10 @@ public class DataNode implements FSConstants, Runnable {
         public void run() {
             try {
                 while (shouldListen) {
+                    // zeng: listen
                     Socket s = ss.accept();
                     //s.setSoTimeout(READ_TIMEOUT);
+                    // zeng: 新线程处理请求
                     new Daemon(new DataXceiver(s)).start();
                 }
                 ss.close();
@@ -358,6 +367,8 @@ public class DataNode implements FSConstants, Runnable {
         }
     }
 
+    // zeng: 处理 收发 block数据 的请求
+
     /**
      * Thread for processing incoming/outgoing data stream
      */
@@ -373,29 +384,45 @@ public class DataNode implements FSConstants, Runnable {
          */
         public void run() {
             try {
+                // zeng: inputstream
                 DataInputStream in = new DataInputStream(new BufferedInputStream(s.getInputStream()));
+
                 try {
+                    // zeng: 操作码
                     byte op = (byte) in.read();
-                    if (op == OP_WRITE_BLOCK) {
+
+                    if (op == OP_WRITE_BLOCK) { // zeng: 写入block
                         //
                         // Read in the header
                         //
+                        // zeng: outputstream
                         DataOutputStream reply = new DataOutputStream(new BufferedOutputStream(s.getOutputStream()));
+
                         try {
+                            // zeng: block上传完成, 是否由datanode通知namenode
                             boolean shouldReportBlock = in.readBoolean();
+
+                            // zeng: block对象
                             Block b = new Block();
                             b.readFields(in);
+
+                            // zeng: 复制到哪几个datanode
                             int numTargets = in.readInt();
                             if (numTargets <= 0) {
                                 throw new IOException("Mislabelled incoming datastream.");
                             }
+
+                            // zeng: DatanodeInfo对象
                             DatanodeInfo targets[] = new DatanodeInfo[numTargets];
                             for (int i = 0; i < targets.length; i++) {
                                 DatanodeInfo tmp = new DatanodeInfo();
                                 tmp.readFields(in);
                                 targets[i] = tmp;
                             }
+
+                            // zeng: 数据传输编码方式
                             byte encodingType = (byte) in.read();
+                            // zeng: chunk长度
                             long len = in.readLong();
 
                             //
@@ -406,12 +433,16 @@ public class DataNode implements FSConstants, Runnable {
                             //
                             // Track all the places we've successfully written the block
                             //
+                            // zeng: block已经保存在了哪些Datanode
                             Vector mirrors = new Vector();
 
                             //
                             // Open local disk out
                             //
+                            // zemg: tmp文件outputstream
                             DataOutputStream out = new DataOutputStream(new BufferedOutputStream(data.writeToBlock(b)));
+
+
                             InetSocketAddress mirrorTarget = null;
                             try {
                                 //
@@ -422,23 +453,37 @@ public class DataNode implements FSConstants, Runnable {
                                 DataOutputStream out2 = null;
                                 if (targets.length > 1) {
                                     // Connect to backup machine
+                                    // zeng: 下一个datanode
                                     mirrorTarget = createSocketAddr(targets[1].getName().toString());
+
                                     try {
+                                        // zeng: 连接到该datanode的socket
                                         Socket s2 = new Socket();
                                         s2.connect(mirrorTarget, READ_TIMEOUT);
                                         s2.setSoTimeout(READ_TIMEOUT);
+
+                                        // zeng: outputstream
                                         out2 = new DataOutputStream(new BufferedOutputStream(s2.getOutputStream()));
+                                        // zeng: inputstream
                                         in2 = new DataInputStream(new BufferedInputStream(s2.getInputStream()));
 
+                                        // zeng: 发送操作码
                                         // Write connection header
                                         out2.write(OP_WRITE_BLOCK);
+                                        // zeng: block上传完成, 是否由datanode通知namenode
                                         out2.writeBoolean(shouldReportBlock);
+                                        // zeng: 发送 block对象
                                         b.write(out2);
+
+                                        // zeng: 发送剩下的DatanodeInfo对象
                                         out2.writeInt(targets.length - 1);
                                         for (int i = 1; i < targets.length; i++) {
                                             targets[i].write(out2);
                                         }
+
+                                        // zeng: 数据传输编码方式
                                         out2.write(encodingType);
+                                        // zeng: chunk长度
                                         out2.writeLong(len);
                                     } catch (IOException ie) {
                                         if (out2 != null) {
@@ -462,21 +507,28 @@ public class DataNode implements FSConstants, Runnable {
                                     boolean anotherChunk = len != 0;
                                     byte buf[] = new byte[BUFFER_SIZE];
 
+                                    // zeng: 读取并保存数据
                                     while (anotherChunk) {
-                                        while (len > 0) {
+                                        while (len > 0) {   // zeng: 这个chunk总共len字节
+                                            // zeng: 读取数据
                                             int bytesRead = in.read(buf, 0, (int) Math.min(buf.length, len));
+
                                             if (bytesRead < 0) {
                                                 throw new EOFException("EOF reading from " + s.toString());
                                             }
+
                                             if (bytesRead > 0) {
                                                 try {
+                                                    // zeng: 写入本地file
                                                     out.write(buf, 0, bytesRead);
                                                 } catch (IOException iex) {
                                                     shutdown();
                                                     throw iex;
                                                 }
+
                                                 if (out2 != null) {
                                                     try {
+                                                        // zeng: 发送到下一个datanode
                                                         out2.write(buf, 0, bytesRead);
                                                     } catch (IOException out2e) {
                                                         //
@@ -494,19 +546,21 @@ public class DataNode implements FSConstants, Runnable {
                                                         }
                                                     }
                                                 }
+
+                                                // zeng: 还要读多少字节
                                                 len -= bytesRead;
                                             }
                                         }
 
-                                        if (encodingType == RUNLENGTH_ENCODING) {
+                                        if (encodingType == RUNLENGTH_ENCODING) {   // zeng: 这个编码方式这个版本没实现
                                             anotherChunk = false;
-                                        } else if (encodingType == CHUNKED_ENCODING) {
-                                            len = in.readLong();
+                                        } else if (encodingType == CHUNKED_ENCODING) {  // zeng: 如果是多个chunk发送
+                                            len = in.readLong();    // zeng: 下一个chunk的大小
                                             if (out2 != null) {
-                                                out2.writeLong(len);
+                                                out2.writeLong(len);    // zeng: 发送到下一个datanode
                                             }
                                             if (len == 0) {
-                                                anotherChunk = false;
+                                                anotherChunk = false;   // zeng: 没有下一个chunk了
                                             }
                                         }
                                     }
@@ -514,17 +568,27 @@ public class DataNode implements FSConstants, Runnable {
                                     if (out2 == null) {
                                         LOG.info("Received block " + b + " from " + s.getInetAddress());
                                     } else {
+                                        // zeng: flush到下一个datanode的数据
                                         out2.flush();
+
+                                        // zeng: 下一个datanode是否保存好block了
                                         long complete = in2.readLong();
                                         if (complete != WRITE_COMPLETE) {
                                             LOG.info("Conflicting value for WRITE_COMPLETE: " + complete);
                                         }
+
+                                        // zeng: 读取
                                         LocatedBlock newLB = new LocatedBlock();
                                         newLB.readFields(in2);
+
+                                        // zeng: 这个block已经在其他两个datanode上保存好了, 返回这两个datanode的DatanodeInfo
                                         DatanodeInfo mirrorsSoFar[] = newLB.getLocations();
+
+                                        // zeng: 将这些DatanodeInfo加入mirrors
                                         for (int k = 0; k < mirrorsSoFar.length; k++) {
                                             mirrors.add(mirrorsSoFar[k]);
                                         }
+
                                         LOG.info("Received block " + b + " from " + s.getInetAddress() + " and mirrored to " + mirrorTarget);
                                     }
                                 } finally {
@@ -541,6 +605,8 @@ public class DataNode implements FSConstants, Runnable {
                                     throw iex;
                                 }
                             }
+
+                            // zeng: block写入完毕
                             data.finalizeBlock(b);
 
                             // 
@@ -549,6 +615,7 @@ public class DataNode implements FSConstants, Runnable {
                             // during NameNode-directed block transfers, but not
                             // client writes.
                             //
+                            // zeng: 加入receivedBlockList, 以让datanode通知namenode
                             if (shouldReportBlock) {
                                 synchronized (receivedBlockList) {
                                     receivedBlockList.add(b);
@@ -560,20 +627,29 @@ public class DataNode implements FSConstants, Runnable {
                             // Tell client job is done, and reply with
                             // the new LocatedBlock.
                             //
+                            // zeng: 返回写入状态
                             reply.writeLong(WRITE_COMPLETE);
+
+                            // zeng: 当前node加入mirrors
                             mirrors.add(curTarget);
+
+                            // zeng: 封装block对象 和 DatanodeInfo数组 为LocatedBlock
                             LocatedBlock newLB = new LocatedBlock(b, (DatanodeInfo[]) mirrors.toArray(new DatanodeInfo[mirrors.size()]));
+                            // zeng: 返回LocatedBlock
                             newLB.write(reply);
                         } finally {
                             reply.close();
                         }
-                    } else if (op == OP_READ_BLOCK || op == OP_READSKIP_BLOCK) {
+
+                    } else if (op == OP_READ_BLOCK || op == OP_READSKIP_BLOCK) {    // zeng: 读取block
                         //
                         // Read in the header
                         //
+                        // zeng: block对象
                         Block b = new Block();
                         b.readFields(in);
 
+                        // zeng: skip len
                         long toSkip = 0;
                         if (op == OP_READSKIP_BLOCK) {
                             toSkip = in.readLong();
@@ -582,32 +658,44 @@ public class DataNode implements FSConstants, Runnable {
                         //
                         // Open reply stream
                         //
+                        // zeng: socket outputstream
                         DataOutputStream out = new DataOutputStream(new BufferedOutputStream(s.getOutputStream()));
+
                         try {
                             //
                             // Write filelen of -1 if error
                             //
                             if (!data.isValidBlock(b)) {
+                                // zeng: block len
                                 out.writeLong(-1);
                             } else {
                                 //
                                 // Get blockdata from disk
                                 //
+                                // zeng: block len
                                 long len = data.getLength(b);
+
+                                // zeng: block file inputstream
                                 DataInputStream in2 = new DataInputStream(data.getBlockData(b));
+
+                                // zeng: 发送len
                                 out.writeLong(len);
 
                                 if (op == OP_READSKIP_BLOCK) {
+                                    // zeng: skip len max
                                     if (toSkip > len) {
                                         toSkip = len;
                                     }
+
                                     long amtSkipped = 0;
                                     try {
+                                        // zeng: 跳过这些字节不读了
                                         amtSkipped = in2.skip(toSkip);
                                     } catch (IOException iex) {
                                         shutdown();
                                         throw iex;
                                     }
+                                    // zeng: 发送`跳过多少字节`
                                     out.writeLong(amtSkipped);
                                 }
 
@@ -615,15 +703,20 @@ public class DataNode implements FSConstants, Runnable {
                                 try {
                                     int bytesRead = 0;
                                     try {
+                                        // zeng: 读到buf
                                         bytesRead = in2.read(buf);
                                     } catch (IOException iex) {
                                         shutdown();
                                         throw iex;
                                     }
-                                    while (bytesRead >= 0) {
+
+                                    while (bytesRead >= 0) {    // zeng: 直到读完
+                                        // zeng: 发送buf字节数组
                                         out.write(buf, 0, bytesRead);
                                         len -= bytesRead;
+
                                         try {
+                                            // zeng: 读到buf
                                             bytesRead = in2.read(buf);
                                         } catch (IOException iex) {
                                             shutdown();
@@ -651,6 +744,7 @@ public class DataNode implements FSConstants, Runnable {
                             System.out.println("Faulty op: " + op);
                             op = (byte) in.read();
                         }
+
                         throw new IOException("Unknown opcode for incoming data stream");
                     }
                 } finally {
@@ -682,7 +776,9 @@ public class DataNode implements FSConstants, Runnable {
          * entire target list, the block, and the data.
          */
         public DataTransfer(DatanodeInfo targets[], Block b) throws IOException {
+            // zeng: 下一个datanode
             this.curTarget = createSocketAddr(targets[0].getName().toString());
+
             this.targets = targets;
             this.b = b;
             this.buf = new byte[BUFFER_SIZE];
@@ -692,32 +788,50 @@ public class DataNode implements FSConstants, Runnable {
          * Do the deed, write the bytes
          */
         public void run() {
+            // zeng: 复制任务+1
             xmitsInProgress++;
+
             try {
+                // zeng: socket
                 Socket s = new Socket();
                 s.connect(curTarget, READ_TIMEOUT);
                 s.setSoTimeout(READ_TIMEOUT);
+
+                // zeng: socket outputstream
                 DataOutputStream out = new DataOutputStream(new BufferedOutputStream(s.getOutputStream()));
+
                 try {
+                    // zeng: block len
                     long filelen = data.getLength(b);
+
+                    // zeng: block file inputstream
                     DataInputStream in = new DataInputStream(new BufferedInputStream(data.getBlockData(b)));
                     try {
                         //
                         // Header info
                         //
+                        // zeng: 发送操作码
                         out.write(OP_WRITE_BLOCK);
+                        // zeng: 发送shouldReportBlock
                         out.writeBoolean(true);
+                        // zeng: 发送block对象
                         b.write(out);
+
+                        // zeng: 发送datanodeinfo数组
                         out.writeInt(targets.length);
                         for (int i = 0; i < targets.length; i++) {
                             targets[i].write(out);
                         }
+
+                        // zeng: 发送 `传输数据编码`
                         out.write(RUNLENGTH_ENCODING);
+                        // zeng: 发送block len
                         out.writeLong(filelen);
 
                         //
                         // Write the data
                         //
+                        // zeng: 发送数据
                         while (filelen > 0) {
                             int bytesRead = in.read(buf, 0, (int) Math.min(filelen, buf.length));
                             out.write(buf, 0, bytesRead);

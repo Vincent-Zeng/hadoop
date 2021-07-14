@@ -40,20 +40,29 @@ public class DF {
   private String mount;
   
   public DF(String path, Configuration conf ) throws IOException {
+    // zeng: 默认df获取的信息有效时间为3s
     this( path, conf.getLong( "dfs.df.interval", DF.DF_INTERVAL_DEFAULT ));
   }
 
   public DF(String path, long dfInterval) throws IOException {
     this.dirPath = path;
     this.dfInterval = dfInterval;
+
+    // zeng: 上一次执行df的时间
     lastDF = ( dfInterval < 0 ) ? 0 : -dfInterval;
+
+    // zeng: df
     this.doDF();
   }
   
-  private void doDF() throws IOException { 
+  private void doDF() throws IOException {
+    // zeng: 是否需要更新硬盘信息
     if( lastDF + dfInterval > System.currentTimeMillis() )
       return;
+
     Process process;
+
+    // zeng: df命令
     process = Runtime.getRuntime().exec(getExecString());
 
     try {
@@ -62,8 +71,11 @@ public class DF {
         (new BufferedReader(new InputStreamReader(process.getErrorStream()))
          .readLine());
       }
+
+      // zeng: 解析df命令执行结果
       parseExecResult(
         new BufferedReader(new InputStreamReader(process.getInputStream())));
+
     } catch (InterruptedException e) {
       throw new IOException(e.toString());
     } finally {
@@ -119,24 +131,34 @@ public class DF {
   }
 
   private String[] getExecString() {
+    // zeng: df -k 存储目录
     return new String[] {"df","-k",dirPath};
   }
   
   private void parseExecResult( BufferedReader lines ) throws IOException {
+    // zeng: 跳过标题行
     lines.readLine();                         // skip headings
   
     StringTokenizer tokens =
       new StringTokenizer(lines.readLine(), " \t\n\r\f%");
-    
+
+    // zeng: 目录所在盘名
     this.filesystem = tokens.nextToken();
     if (!tokens.hasMoreTokens()) {            // for long filesystem name
       tokens = new StringTokenizer(lines.readLine(), " \t\n\r\f%");
     }
+
+    // zeng: 容量
     this.capacity = Long.parseLong(tokens.nextToken()) * 1024;
+    // zeng: 已用
     this.used = Long.parseLong(tokens.nextToken()) * 1024;
+    // zeng: 剩余
     this.available = Long.parseLong(tokens.nextToken()) * 1024;
+    // zeng: 已用百分比
     this.percentUsed = Integer.parseInt(tokens.nextToken());
+    // zeng: 挂载点
     this.mount = tokens.nextToken();
+    // zeng: 最后一次更新硬盘信息的时间
     this.lastDF = System.currentTimeMillis();
   }
 

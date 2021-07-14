@@ -54,7 +54,7 @@ class Block implements Writable, Comparable {
     /**
      */
     public Block() {
-        // zeng: TODO blkid怎么确保唯一啊?
+        // zeng: blkid怎么确保唯一啊? 似乎这个版本没有实现唯一. 看1.0.0版本,会判断当前系统中有没有相同id, 如果有就取下一个随机数, 直到不重复
         this.blkid = r.nextLong();
         this.len = 0;
     }

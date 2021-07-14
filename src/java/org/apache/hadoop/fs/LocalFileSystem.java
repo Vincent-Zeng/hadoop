@@ -1,12 +1,12 @@
 /**
  * Copyright 2005 The Apache Software Foundation
- *
+ * <p>
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
+ * <p>
+ * http://www.apache.org/licenses/LICENSE-2.0
+ * <p>
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -35,8 +35,10 @@ public class LocalFileSystem extends FileSystem {
     TreeMap lockObjSet = new TreeMap();
     // by default use copy/delete instead of rename
     boolean useCopyForRename = true;
-    
-    /** Construct a local filesystem client. */
+
+    /**
+     * Construct a local filesystem client.
+     */
     public LocalFileSystem(Configuration conf) throws IOException {
         super(conf);
         // if you find an OS which reliably supports non-POSIX
@@ -52,7 +54,7 @@ public class LocalFileSystem extends FileSystem {
      * Return null if otherwise.
      */
     public String[][] getFileCacheHints(File f, long start, long len) throws IOException {
-        if (! f.exists()) {
+        if (!f.exists()) {
             return null;
         } else {
             String result[][] = new String[1][];
@@ -62,7 +64,9 @@ public class LocalFileSystem extends FileSystem {
         }
     }
 
-    public String getName() { return "local"; }
+    public String getName() {
+        return "local";
+    }
 
     /*******************************************************
      * For open()'s FSInputStream
@@ -71,46 +75,56 @@ public class LocalFileSystem extends FileSystem {
         FileInputStream fis;
 
         public LocalFSFileInputStream(File f) throws IOException {
-          this.fis = new FileInputStream(f);
+            this.fis = new FileInputStream(f);
         }
 
         public void seek(long pos) throws IOException {
-          fis.getChannel().position(pos);
+            fis.getChannel().position(pos);
         }
 
         public long getPos() throws IOException {
-          return fis.getChannel().position();
+            return fis.getChannel().position();
         }
 
         /*
          * Just forward to the fis
          */
-        public int available() throws IOException { return fis.available(); }
-        public void close() throws IOException { fis.close(); }
-        public boolean markSupport() { return false; }
+        public int available() throws IOException {
+            return fis.available();
+        }
+
+        public void close() throws IOException {
+            fis.close();
+        }
+
+        public boolean markSupport() {
+            return false;
+        }
 
         public int read() throws IOException {
-          try {
-            return fis.read();
-          } catch (IOException e) {               // unexpected exception
-            throw new FSError(e);                 // assume native fs error
-          }
+            try {
+                return fis.read();
+            } catch (IOException e) {               // unexpected exception
+                throw new FSError(e);                 // assume native fs error
+            }
         }
 
         public int read(byte[] b, int off, int len) throws IOException {
-          try {
-            return fis.read(b, off, len);
-          } catch (IOException e) {               // unexpected exception
-            throw new FSError(e);                 // assume native fs error
-          }
+            try {
+                return fis.read(b, off, len);
+            } catch (IOException e) {               // unexpected exception
+                throw new FSError(e);                 // assume native fs error
+            }
         }
 
-        public long skip(long n) throws IOException { return fis.skip(n); }
+        public long skip(long n) throws IOException {
+            return fis.skip(n);
+        }
     }
-    
+
     public FSInputStream openRaw(File f) throws IOException {
         f = makeAbsolute(f);
-        if (! f.exists()) {
+        if (!f.exists()) {
             throw new FileNotFoundException(f.toString());
         }
         return new LocalFSFileInputStream(f);
@@ -120,55 +134,61 @@ public class LocalFileSystem extends FileSystem {
      * For create()'s FSOutputStream.
      *********************************************************/
     class LocalFSFileOutputStream extends FSOutputStream {
-      FileOutputStream fos;
+        FileOutputStream fos;
 
-      public LocalFSFileOutputStream(File f) throws IOException {
-        this.fos = new FileOutputStream(f);
-      }
-
-      public long getPos() throws IOException {
-        return fos.getChannel().position();
-      }
-
-      /*
-       * Just forward to the fos
-       */
-      public void close() throws IOException { fos.close(); }
-      public void flush() throws IOException { fos.flush(); }
-
-      public void write(byte[] b, int off, int len) throws IOException {
-        try {
-          fos.write(b, off, len);
-        } catch (IOException e) {               // unexpected exception
-          throw new FSError(e);                 // assume native fs error
+        public LocalFSFileOutputStream(File f) throws IOException {
+            this.fos = new FileOutputStream(f);
         }
-      }
-      public void write(int b) throws IOException {
-        try {
-          fos.write(b);
-        } catch (IOException e) {               // unexpected exception
-          throw new FSError(e);                 // assume native fs error
+
+        public long getPos() throws IOException {
+            return fos.getChannel().position();
         }
-      }
+
+        /*
+         * Just forward to the fos
+         */
+        public void close() throws IOException {
+            fos.close();
+        }
+
+        public void flush() throws IOException {
+            fos.flush();
+        }
+
+        public void write(byte[] b, int off, int len) throws IOException {
+            try {
+                fos.write(b, off, len);
+            } catch (IOException e) {               // unexpected exception
+                throw new FSError(e);                 // assume native fs error
+            }
+        }
+
+        public void write(int b) throws IOException {
+            try {
+                fos.write(b);
+            } catch (IOException e) {               // unexpected exception
+                throw new FSError(e);                 // assume native fs error
+            }
+        }
     }
 
     private File makeAbsolute(File f) {
-      if (isAbsolute(f)) {
-        return f;
-      } else {
-        return new File(workingDir, f.toString());
-      }
+        if (isAbsolute(f)) {
+            return f;
+        } else {
+            return new File(workingDir, f.toString());
+        }
     }
-    
+
     public FSOutputStream createRaw(File f, boolean overwrite)
-      throws IOException {
+            throws IOException {
         f = makeAbsolute(f);
-        if (f.exists() && ! overwrite) {
-            throw new IOException("File already exists:"+f);
+        if (f.exists() && !overwrite) {
+            throw new IOException("File already exists:" + f);
         }
         File parent = f.getParentFile();
         if (parent != null)
-          parent.mkdirs();
+            parent.mkdirs();
 
         return new LocalFSFileOutputStream(f);
     }
@@ -186,7 +206,8 @@ public class LocalFileSystem extends FileSystem {
         f = makeAbsolute(f);
         if (f.isFile()) {
             return f.delete();
-        } else return fullyDelete(f);
+        } else
+            return fullyDelete(f);
     }
 
     public boolean exists(File f) throws IOException {
@@ -200,7 +221,7 @@ public class LocalFileSystem extends FileSystem {
     }
 
     public boolean isAbsolute(File f) {
-      return f.isAbsolute();
+        return f.isAbsolute();
     }
 
     public long getLength(File f) throws IOException {
@@ -225,14 +246,14 @@ public class LocalFileSystem extends FileSystem {
      * calls java.io.File.getAbsolutePath().
      */
     public void setWorkingDirectory(File new_dir) {
-      workingDir = makeAbsolute(new_dir);
-      System.setProperty("user.dir", workingDir.toString());
+        workingDir = makeAbsolute(new_dir);
+        System.setProperty("user.dir", workingDir.toString());
     }
-    
+
     public File getWorkingDirectory() {
-      return workingDir;
+        return workingDir;
     }
-    
+
     public synchronized void lock(File f, boolean shared) throws IOException {
         f = makeAbsolute(f);
         f.createNewFile();
@@ -276,7 +297,7 @@ public class LocalFileSystem extends FileSystem {
 
     // In the case of the local filesystem, we can just rename the file.
     public void moveFromLocalFile(File src, File dst) throws IOException {
-        if (! src.equals(dst)) {
+        if (!src.equals(dst)) {
             src = makeAbsolute(src);
             dst = makeAbsolute(dst);
             if (useCopyForRename) {
@@ -288,7 +309,7 @@ public class LocalFileSystem extends FileSystem {
 
     // Similar to moveFromLocalFile(), except the source is kept intact.
     public void copyFromLocalFile(File src, File dst) throws IOException {
-        if (! src.equals(dst)) {
+        if (!src.equals(dst)) {
             src = makeAbsolute(src);
             dst = makeAbsolute(dst);
             FileUtil.copyContents(this, src, dst, true, getConf());
@@ -297,7 +318,7 @@ public class LocalFileSystem extends FileSystem {
 
     // We can't delete the src file in this case.  Too bad.
     public void copyToLocalFile(File src, File dst) throws IOException {
-        if (! src.equals(dst)) {
+        if (!src.equals(dst)) {
             src = makeAbsolute(src);
             dst = makeAbsolute(dst);
             FileUtil.copyContents(this, src, dst, true, getConf());
@@ -323,15 +344,17 @@ public class LocalFileSystem extends FileSystem {
         // Ignore the file, it's at the right destination!
     }
 
-    public void close() throws IOException {}
+    public void close() throws IOException {
+    }
 
     public String toString() {
         return "LocalFS";
     }
-    
+
     /**
      * Implement our own version instead of using the one in FileUtil,
      * to avoid infinite recursion.
+     *
      * @param dir
      * @return
      * @throws IOException
@@ -342,11 +365,11 @@ public class LocalFileSystem extends FileSystem {
         if (contents != null) {
             for (int i = 0; i < contents.length; i++) {
                 if (contents[i].isFile()) {
-                    if (! contents[i].delete()) {
+                    if (!contents[i].delete()) {
                         return false;
                     }
                 } else {
-                    if (! fullyDelete(contents[i])) {
+                    if (!fullyDelete(contents[i])) {
                         return false;
                     }
                 }
@@ -355,44 +378,46 @@ public class LocalFileSystem extends FileSystem {
         return dir.delete();
     }
 
-    /** Moves files to a bad file directory on the same device, so that their
-     * storage will not be reused. */
+    /**
+     * Moves files to a bad file directory on the same device, so that their
+     * storage will not be reused.
+     */
     public void reportChecksumFailure(File f, FSInputStream in,
                                       long start, long length, int crc) {
-      try {
-        // canonicalize f   
-        f = makeAbsolute(f).getCanonicalFile();
-      
-        // find highest writable parent dir of f on the same device
-        String device = new DF(f.toString(), getConf()).getMount();
-        File parent = f.getParentFile();
-        File dir;
-        do {
-          dir = parent;
-          parent = parent.getParentFile();
-        } while (parent.canWrite() && parent.toString().startsWith(device));
+        try {
+            // canonicalize f
+            f = makeAbsolute(f).getCanonicalFile();
 
-        // move the file there
-        File badDir = new File(dir, "bad_files");
-        badDir.mkdirs();
-        String suffix = "." + new Random().nextInt();
-        File badFile = new File(badDir,f.getName()+suffix);
-        LOG.warning("Moving bad file " + f + " to " + badFile);
-        in.close();                               // close it first
-        f.renameTo(badFile);                      // rename it
+            // find highest writable parent dir of f on the same device
+            String device = new DF(f.toString(), getConf()).getMount();
+            File parent = f.getParentFile();
+            File dir;
+            do {
+                dir = parent;
+                parent = parent.getParentFile();
+            } while (parent.canWrite() && parent.toString().startsWith(device));
 
-        // move checksum file too
-        File checkFile = getChecksumFile(f);
-        checkFile.renameTo(new File(badDir, checkFile.getName()+suffix));
+            // move the file there
+            File badDir = new File(dir, "bad_files");
+            badDir.mkdirs();
+            String suffix = "." + new Random().nextInt();
+            File badFile = new File(badDir, f.getName() + suffix);
+            LOG.warning("Moving bad file " + f + " to " + badFile);
+            in.close();                               // close it first
+            f.renameTo(badFile);                      // rename it
 
-      } catch (IOException e) {
-        LOG.warning("Error moving bad file " + f + ": " + e);
-      }
+            // move checksum file too
+            File checkFile = getChecksumFile(f);
+            checkFile.renameTo(new File(badDir, checkFile.getName() + suffix));
+
+        } catch (IOException e) {
+            LOG.warning("Error moving bad file " + f + ": " + e);
+        }
     }
 
     public long getBlockSize() {
-      // default to 32MB: large enough to minimize the impact of seeks
-      return getConf().getLong("fs.local.block.size", 32 * 1024 * 1024);
+        // default to 32MB: large enough to minimize the impact of seeks
+        return getConf().getLong("fs.local.block.size", 32 * 1024 * 1024);
     }
 
 
