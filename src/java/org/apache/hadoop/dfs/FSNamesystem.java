@@ -225,17 +225,24 @@ class FSNamesystem implements FSConstants {
      */
     public Object[] open(UTF8 src) {
         Object results[] = null;
+        // zeng: 获取文件包含的block
         Block blocks[] = dir.getFile(src);
+
         if (blocks != null) {
             results = new Object[2];
+
             DatanodeInfo machineSets[][] = new DatanodeInfo[blocks.length][];
 
+            // zeng: 这些block在哪些datanode下
             for (int i = 0; i < blocks.length; i++) {
                 TreeSet containingNodes = (TreeSet) blocksMap.get(blocks[i]);
+
                 if (containingNodes == null) {
                     machineSets[i] = new DatanodeInfo[0];
                 } else {
                     machineSets[i] = new DatanodeInfo[containingNodes.size()];
+
+                    // zeng: 哪些datanode下
                     int j = 0;
                     for (Iterator it = containingNodes.iterator(); it.hasNext(); j++) {
                         machineSets[i][j] = (DatanodeInfo) it.next();
@@ -243,9 +250,12 @@ class FSNamesystem implements FSConstants {
                 }
             }
 
+            // zeng: 哪些block
             results[0] = blocks;
+            // zeng: 这些block在哪些datanode下
             results[1] = machineSets;
         }
+
         return results;
     }
 

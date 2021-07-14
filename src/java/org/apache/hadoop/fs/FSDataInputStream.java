@@ -43,13 +43,20 @@ public class FSDataInputStream extends DataInputStream {
 
     public Checker(FileSystem fs, File file, Configuration conf)
       throws IOException {
+      // zeng: DFSInputStream
       super(fs.openRaw(file));
-      
+      // zeng: dfs
       this.fs = fs;
+      // zeng: 要读取的文件
       this.file = file;
+
+      // zeng: sum file
       File sumFile = fs.getChecksumFile(file);
+
       try {
+        // zeng: dfs sum file inputstream
         this.sums = new FSDataInputStream(fs.openRaw(sumFile), conf);
+
         byte[] version = new byte[VERSION.length];
         sums.readFully(version);
         if (!Arrays.equals(version, VERSION))
@@ -80,8 +87,10 @@ public class FSDataInputStream extends DataInputStream {
     }
     
     public int read(byte b[], int off, int len) throws IOException {
+      // zeng: DFSInputStream.read
       int read = in.read(b, off, len);
 
+      // zeng: TODO 校验
       if (sums != null) {
         int summed = 0;
         while (summed < read) {

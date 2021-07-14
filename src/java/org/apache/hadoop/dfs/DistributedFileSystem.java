@@ -156,6 +156,7 @@ public class DistributedFileSystem extends FileSystem {
         dfs.release(getPath(f));
     }
 
+    // zeng: 从本地移动文件到dfs
     public void moveFromLocalFile(File src, File dst) throws IOException {
         doFromLocalFile(src, dst, true);
     }
@@ -228,12 +229,13 @@ public class DistributedFileSystem extends FileSystem {
             localFs.delete(src);
     }
 
+    // zeng: 从dfs读取文件到本地
     public void copyToLocalFile(File src, File dst) throws IOException {
         if (dst.exists()) {
-            if (!dst.isDirectory()) {
+            if (!dst.isDirectory()) {   // zeng: 必须是目录
                 throw new IOException("Target " + dst + " already exists");
             } else {
-                dst = new File(dst, src.getName());
+                dst = new File(dst, src.getName()); // zeng: 拼接文件名
                 if (dst.exists()) {
                     throw new IOException("Target " + dst + " already exists");
                 }
@@ -243,27 +245,45 @@ public class DistributedFileSystem extends FileSystem {
 
         FileSystem localFs = getNamed("local", getConf());
 
-        if (isDirectory(src)) {
+        if (isDirectory(src)) { // zeng: 如果是目录
+            // zeng: 创建顶层目录
             localFs.mkdirs(dst);
+
+            // zeng: ls
             File contents[] = listFiles(src);
+
+            // zeng: 遍历读取目录下的节点
             for (int i = 0; i < contents.length; i++) {
                 copyToLocalFile(contents[i], new File(dst, contents[i].getName()));
             }
+
         } else {
             byte buf[] = new byte[getConf().getInt("io.file.buffer.size", 4096)];
+
+            // zeng: DFSInputStream
             InputStream in = open(src);
+
             try {
+                // zeng: LocalFSFileOutputStream
                 OutputStream out = localFs.create(dst);
+
                 try {
+
+                    // zeng: 读取到buf DFSInputStream.read
                     int bytesRead = in.read(buf);
-                    while (bytesRead >= 0) {
+
+                    while (bytesRead >= 0) {    // zeng: 直到读完
+                        // zeng: buf写入文件
                         out.write(buf, 0, bytesRead);
+                        // zeng 读取到buf
                         bytesRead = in.read(buf);
                     }
                 } finally {
+                    // zeng: LocalFSFileOutputStream.close
                     out.close();
                 }
             } finally {
+                // zeng: DFSInputStream.close
                 in.close();
             }
         }

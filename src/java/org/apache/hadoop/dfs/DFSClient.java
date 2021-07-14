@@ -212,6 +212,7 @@ class DFSClient implements FSConstants {
         }
     }
 
+    // zeng: 从datanode数组中选一个
     /**
      * Pick the best node from which to stream the data.
      * That's the local one, if available.
@@ -222,25 +223,35 @@ class DFSClient implements FSConstants {
             throw new IOException("No live nodes contain current block");
         }
         DatanodeInfo chosenNode = null;
+
+        // zeng: 优先本地机器
         for (int i = 0; i < nodes.length; i++) {
+            // zeng: 不在deadNodes中
             if (deadNodes.contains(nodes[i])) {
                 continue;
             }
+
+            // zeng: host
             String nodename = nodes[i].getName().toString();
             int colon = nodename.indexOf(':');
             if (colon >= 0) {
                 nodename = nodename.substring(0, colon);
             }
+
+            // zeng: 如果是本地机器
             if (localName.equals(nodename)) {
                 chosenNode = nodes[i];
                 break;
             }
         }
+
+        // zeng: 从其他节点随便选一个
         if (chosenNode == null) {
             do {
                 chosenNode = nodes[Math.abs(r.nextInt()) % nodes.length];
             } while (deadNodes.contains(chosenNode));
         }
+
         return chosenNode;
     }
 
@@ -293,26 +304,35 @@ class DFSClient implements FSConstants {
          */
         public DFSInputStream(String src) throws IOException {
             this.src = src;
+
+            // zeng: 从namenode获取文件信息
             openInfo();
+
             this.blockStream = null;
+
+            // zeng: 统计file大小
             for (int i = 0; i < blocks.length; i++) {
                 this.filelen += blocks[i].getNumBytes();
             }
         }
 
+        // zeng: 从namenode获取文件信息
         /**
          * Grab the open-file info from namenode
          */
         void openInfo() throws IOException {
             Block oldBlocks[] = this.blocks;
 
+            // zeng: 返回文件包含哪些block, block保存在哪些datanode
             LocatedBlock results[] = namenode.open(src);
+
             Vector blockV = new Vector();
             Vector nodeV = new Vector();
             for (int i = 0; i < results.length; i++) {
                 blockV.add(results[i].getBlock());
                 nodeV.add(results[i].getLocations());
             }
+
             Block newBlocks[] = (Block[]) blockV.toArray(new Block[blockV.size()]);
 
             if (oldBlocks != null) {
@@ -325,15 +345,20 @@ class DFSClient implements FSConstants {
                     throw new IOException("Blocklist for " + src + " now has different length");
                 }
             }
+
+            // zeng: 文件下有哪些block
             this.blocks = newBlocks;
+            // zeng: 每个block在保存哪些datanode下
             this.nodes = (DatanodeInfo[][]) nodeV.toArray(new DatanodeInfo[nodeV.size()][]);
         }
 
+        // zeng: 文件中的target位置对应哪个block, 获取block input stream
         /**
          * Open a DataInputStream to a DataNode so that it can be read from.
          * We get block ID and the IDs of the destinations at startup, from the namenode.
          */
         private synchronized void blockSeekTo(long target) throws IOException {
+            // zeng: 超出文件大小了
             if (target >= filelen) {
                 throw new IOException("Attempted to read past end of file");
             }
@@ -349,20 +374,28 @@ class DFSClient implements FSConstants {
             int targetBlock = -1;
             long targetBlockStart = 0;
             long targetBlockEnd = 0;
+
+            // zeng: 文件中target位置的字节在哪个block上
             for (int i = 0; i < blocks.length; i++) {
+                // zeng: block len
                 long blocklen = blocks[i].getNumBytes();
+
+                // zeng: block end
                 targetBlockEnd = targetBlockStart + blocklen - 1;
 
-                if (target >= targetBlockStart && target <= targetBlockEnd) {
+                if (target >= targetBlockStart && target <= targetBlockEnd) {   // zeng: hit
                     targetBlock = i;
                     break;
                 } else {
-                    targetBlockStart = targetBlockEnd + 1;
+                    targetBlockStart = targetBlockEnd + 1;  // zeng: next block start
                 }
             }
+
             if (targetBlock < 0) {
                 throw new IOException("Impossible situation: could not find target position " + target);
             }
+
+            // zeng: 从这个block什么位置开始读
             long offsetIntoBlock = target - targetBlockStart;
 
             //
@@ -371,32 +404,46 @@ class DFSClient implements FSConstants {
             int failures = 0;
             InetSocketAddress targetAddr = null;
             TreeSet deadNodes = new TreeSet();
+
             while (s == null) {
                 DatanodeInfo chosenNode;
 
                 try {
+                    // zeng: 从datanode数组中选一个
                     chosenNode = bestNode(nodes[targetBlock], deadNodes);
+
                     targetAddr = DataNode.createSocketAddr(chosenNode.getName().toString());
+
                 } catch (IOException ie) {
                     String blockInfo =
                             blocks[targetBlock] + " file=" + src + " offset=" + target;
+
+                    // zeng: 三次重试
                     if (failures >= MAX_BLOCK_ACQUIRE_FAILURES) {
                         throw new IOException("Could not obtain block: " + blockInfo);
                     }
+
                     if (nodes[targetBlock] == null || nodes[targetBlock].length == 0) {
                         LOG.info("No node available for block: " + blockInfo);
                     }
+
                     LOG.info("Could not obtain block from any node:  " + ie);
+
                     try {
                         Thread.sleep(3000);
                     } catch (InterruptedException iex) {
                     }
                     deadNodes.clear();
+
+                    // zeng: 重新从namenode获取文件信息
                     openInfo();
+
                     failures++;
                     continue;
                 }
+
                 try {
+                    // zeng: datanode socket
                     s = new Socket();
                     s.connect(targetAddr, READ_TIMEOUT);
                     s.setSoTimeout(READ_TIMEOUT);
@@ -404,18 +451,30 @@ class DFSClient implements FSConstants {
                     //
                     // Xmit header info to datanode
                     //
+                    // zeng: datanode outputstream
                     DataOutputStream out = new DataOutputStream(new BufferedOutputStream(s.getOutputStream()));
+
+                    // zeng: 发送操作码
                     out.write(OP_READSKIP_BLOCK);
+
+                    // zeng: 发送block对象
                     blocks[targetBlock].write(out);
+                    // zeng: 跳过多少个字节
                     out.writeLong(offsetIntoBlock);
+                    // zeng: flush
                     out.flush();
 
                     //
                     // Get bytes in block, set streams
                     //
+                    // zeng: socket inputstream
                     DataInputStream in = new DataInputStream(new BufferedInputStream(s.getInputStream()));
+
+                    // zeng: block size
                     long curBlockSize = in.readLong();
+                    // zeng: 实际跳过多少字节
                     long amtSkipped = in.readLong();
+
                     if (curBlockSize != blocks[targetBlock].len) {
                         throw new IOException("Recorded block size is " + blocks[targetBlock].len + ", but datanode reports size of " + curBlockSize);
                     }
@@ -423,8 +482,11 @@ class DFSClient implements FSConstants {
                         throw new IOException("Asked for offset of " + offsetIntoBlock + ", but only received offset of " + amtSkipped);
                     }
 
+                    // zeng: 文件中target位置
                     this.pos = target;
+                    // zeng: 这个block的结束位置相当于文件中什么位置
                     this.blockEnd = targetBlockEnd;
+                    // zeng: block input stream
                     this.blockStream = in;
                 } catch (IOException ex) {
                     // Put chosen node into dead list, continue
@@ -449,12 +511,15 @@ class DFSClient implements FSConstants {
                 throw new IOException("Stream closed");
             }
 
+            // zeng: close block stream
             if (s != null) {
                 blockStream.close();
                 s.close();
                 s = null;
             }
+
             super.close();
+
             closed = true;
         }
 
@@ -470,11 +535,14 @@ class DFSClient implements FSConstants {
                 if (pos > blockEnd) {
                     blockSeekTo(pos);
                 }
+
                 result = blockStream.read();
+
                 if (result >= 0) {
                     pos++;
                 }
             }
+
             return result;
         }
 
@@ -485,16 +553,24 @@ class DFSClient implements FSConstants {
             if (closed) {
                 throw new IOException("Stream closed");
             }
+
             if (pos < filelen) {
-                if (pos > blockEnd) {
+                if (pos > blockEnd) {   // zeng: 需要读取下一个block了
                     blockSeekTo(pos);
                 }
+
+                // zeng: 读取到buf
+                // zeng: `blockEnd - pos + 1`为本block剩余要读字节数
                 int result = blockStream.read(buf, off, Math.min(len, (int) (blockEnd - pos + 1)));
+
+                // zeng: file read next pos
                 if (result >= 0) {
                     pos += result;
                 }
+
                 return result;
             }
+
             return -1;
         }
 

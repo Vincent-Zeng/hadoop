@@ -125,6 +125,7 @@ public abstract class FileSystem extends Configured {
      * Return the name of the checksum file associated with a file.
      */
     public static File getChecksumFile(File file) {
+        // zeng: file同目录下的 同名.crc 文件
         return new File(file.getParentFile(), "." + file.getName() + ".crc");
     }
 

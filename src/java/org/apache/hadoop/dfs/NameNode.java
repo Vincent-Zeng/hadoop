@@ -139,6 +139,7 @@ public class NameNode implements ClientProtocol, DatanodeProtocol, FSConstants {
     // ClientProtocol
     /////////////////////////////////////////////////////
 
+    // zeng: 返回文件包含哪些block, block保存在哪些datanode
     /**
      *
      */
