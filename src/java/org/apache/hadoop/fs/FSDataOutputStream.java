@@ -44,25 +44,36 @@ public class FSDataOutputStream extends DataOutputStream {
             super(fs.createRaw(file, overwrite)); // zeng: dfs file outputstream (DFSOutputStream)
 
             this.bytesPerSum = conf.getInt("io.bytes.per.checksum", 512);
-            this.sums =
-                    new FSDataOutputStream(fs.createRaw(fs.getChecksumFile(file), true), conf);
-
+            // zeng: dfs sum file outputstream(DFSOutputStream)
+            this.sums = new FSDataOutputStream(fs.createRaw(fs.getChecksumFile(file), true), conf);
+            // zeng: magic num + version
             sums.write(CHECKSUM_VERSION, 0, CHECKSUM_VERSION.length);
+            // zeng: 多少byte 对应一个 checksum
             sums.writeInt(this.bytesPerSum);
         }
 
         public void write(byte b[], int off, int len) throws IOException {
             int summed = 0;
-            while (summed < len) {
 
+            while (summed < len) {  // zeng: 本buff
+                // zeng: 本checksum所对应byte还有多少要收集
                 int goal = this.bytesPerSum - inSum;
+
+                // zeng: 本buff里还有多少未处理
                 int inBuf = len - summed;
+
+                // zeng: 本次处理多少byte
                 int toSum = inBuf <= goal ? inBuf : goal;
 
+                // zeng: 本次处理的byte
                 sum.update(b, off + summed, toSum);
-                summed += toSum;
 
+                // zeng: 本buff处理了多少
+                summed += toSum;
+                // zeng: 本checksum所对应byte已经收集了多少
                 inSum += toSum;
+
+                // zeng: 本checksum所对应byte已经收集完毕
                 if (inSum == this.bytesPerSum) {
                     writeSum();
                 }
@@ -74,8 +85,11 @@ public class FSDataOutputStream extends DataOutputStream {
 
         private void writeSum() throws IOException {
             if (inSum != 0) {
+                // zeng: 发送checksum
                 sums.writeInt((int) sum.getValue());
+                // zeng: 新的checksum
                 sum.reset();
+                // zeng: 重置
                 inSum = 0;
             }
         }

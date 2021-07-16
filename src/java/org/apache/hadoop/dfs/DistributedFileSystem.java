@@ -351,6 +351,7 @@ public class DistributedFileSystem extends FileSystem {
         return path.toString();
     }
 
+    // zeng: 本版本还没实现. 实现思路大概是移除坏掉的block副本, 重新复制
     public void reportChecksumFailure(File f, FSInputStream in,
                                       long start, long length, int crc) {
 
