@@ -39,6 +39,7 @@ public class FileUtil {
         return fs.delete(dir);
     }
 
+    // zeng: 复制文件, 实质是读源文件, 写入目标文件
     /**
      * Copy a file's contents to a new location.
      * Returns whether a target file was overwritten
@@ -48,21 +49,31 @@ public class FileUtil {
             return false;
         }
 
+        // zeng: mkdirs
         File dstParent = dst.getParentFile();
         if ((dstParent != null) && (!fs.exists(dstParent))) {
             fs.mkdirs(dstParent);
         }
 
         if (fs.isFile(src)) {
+            // zeng: DFSInputStream
             FSInputStream in = fs.openRaw(src);
+
             try {
+                // zeng: DFSOutputStream
                 FSOutputStream out = fs.createRaw(dst, true);
+
                 byte buf[] = new byte[conf.getInt("io.file.buffer.size", 4096)];
+
                 try {
+                    // zeng: read to buf
                     int readBytes = in.read(buf);
 
                     while (readBytes >= 0) {
+                        // zeng: write buf to outputstream
                         out.write(buf, 0, readBytes);
+
+                        // zeng: next read
                         readBytes = in.read(buf);
                     }
                 } finally {

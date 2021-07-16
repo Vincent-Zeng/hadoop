@@ -1,12 +1,12 @@
 /**
  * Copyright 2005 The Apache Software Foundation
- *
+ * <p>
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
+ * <p>
+ * http://www.apache.org/licenses/LICENSE-2.0
+ * <p>
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -66,16 +66,18 @@ public class DFSShell {
     }
 
     void cat(String srcf) throws IOException {
-      FSDataInputStream in = fs.open(new File(srcf));
-      try {
-        DataInputStream din = new DataInputStream(new BufferedInputStream(in));
-        String line;
-        while((line = din.readLine()) != null) {
-          System.out.println(line);      
+        // zeng: DFSInputStream
+        FSDataInputStream in = fs.open(new File(srcf));
+
+        try {
+            DataInputStream din = new DataInputStream(new BufferedInputStream(in));
+            String line;
+            while ((line = din.readLine()) != null) {
+                System.out.println(line);
+            }
+        } finally {
+            in.close();
         }
-      } finally {
-        in.close();
-      }
     }
 
     /**
@@ -83,17 +85,21 @@ public class DFSShell {
      */
     public void ls(String src, boolean recursive) throws IOException {
         File items[] = fs.listFiles(new File(src));
+
         if (items == null) {
             System.out.println("Could not get listing for " + src);
         } else {
-            if(!recursive) {
-            	System.out.println("Found " + items.length + " items");
+            if (!recursive) {
+                System.out.println("Found " + items.length + " items");
             }
+
             for (int i = 0; i < items.length; i++) {
                 File cur = items[i];
+
                 System.out.println(cur.getPath() + "\t" + (cur.isDirectory() ? "<dir>" : ("" + cur.length())));
-                if(recursive && cur.isDirectory()) {
-									 ls(cur.getPath(), recursive);
+
+                if (recursive && cur.isDirectory()) {
+                    ls(cur.getPath(), recursive);
                 }
             }
         }
@@ -121,7 +127,7 @@ public class DFSShell {
         File f = new File(src);
         fs.mkdirs(f);
     }
-    
+
     /**
      * Rename an DFS file
      */
@@ -137,6 +143,7 @@ public class DFSShell {
      * Copy an DFS file
      */
     public void copy(String srcf, String dstf, Configuration conf) throws IOException {
+        // zeng: 复制文件, 实质是读源文件, 写入目标文件
         if (FileUtil.copyContents(fs, new File(srcf), new File(dstf), true, conf)) {
             System.out.println("Copied " + srcf + " to " + dstf);
         } else {
@@ -187,28 +194,28 @@ public class DFSShell {
      * Gives a report on how the FileSystem is doing
      */
     public void report() throws IOException {
-      if (fs instanceof DistributedFileSystem) {
-        DistributedFileSystem dfs = (DistributedFileSystem)fs;
-        long raw = dfs.getRawCapacity();
-        long rawUsed = dfs.getRawUsed();
-        long used = dfs.getUsed();
+        if (fs instanceof DistributedFileSystem) {
+            DistributedFileSystem dfs = (DistributedFileSystem) fs;
+            long raw = dfs.getRawCapacity();
+            long rawUsed = dfs.getRawUsed();
+            long used = dfs.getUsed();
 
-        System.out.println("Total raw bytes: " + raw + " (" + byteDesc(raw) + ")");
-        System.out.println("Used raw bytes: " + rawUsed + " (" + byteDesc(rawUsed) + ")");
-        System.out.println("% used: " + limitDecimal(((1.0 * rawUsed) / raw) * 100, 2) + "%");
-        System.out.println();
-        System.out.println("Total effective bytes: " + used + " (" + byteDesc(used) + ")");
-        System.out.println("Effective replication multiplier: " + (1.0 * rawUsed / used));
+            System.out.println("Total raw bytes: " + raw + " (" + byteDesc(raw) + ")");
+            System.out.println("Used raw bytes: " + rawUsed + " (" + byteDesc(rawUsed) + ")");
+            System.out.println("% used: " + limitDecimal(((1.0 * rawUsed) / raw) * 100, 2) + "%");
+            System.out.println();
+            System.out.println("Total effective bytes: " + used + " (" + byteDesc(used) + ")");
+            System.out.println("Effective replication multiplier: " + (1.0 * rawUsed / used));
 
-        System.out.println("-------------------------------------------------");
-        DataNodeReport info[] = dfs.getDataNodeStats();
-        System.out.println("Datanodes available: " + info.length);
-        System.out.println();
-        for (int i = 0; i < info.length; i++) {
-          System.out.println(info[i]);
-          System.out.println();
+            System.out.println("-------------------------------------------------");
+            DataNodeReport info[] = dfs.getDataNodeStats();
+            System.out.println("Datanodes available: " + info.length);
+            System.out.println();
+            for (int i = 0; i < info.length; i++) {
+                System.out.println(info[i]);
+                System.out.println();
+            }
         }
-      }
     }
 
     /**
@@ -218,7 +225,7 @@ public class DFSShell {
         if (argv.length < 1) {
             System.out.println("Usage: java DFSShell [-local | -dfs <namenode:port>]" +
                     " [-ls <path>] [-lsr <path>] [-du <path>] [-mv <src> <dst>] [-cp <src> <dst>] [-rm <src>]" +
-                    " [-put <localsrc> <dst>] [-copyFromLocal <localsrc> <dst>] [-moveFromLocal <localsrc> <dst>]" + 
+                    " [-put <localsrc> <dst>] [-copyFromLocal <localsrc> <dst>] [-moveFromLocal <localsrc> <dst>]" +
                     " [-get <src> <localdst>] [-cat <src>] [-copyToLocal <src> <localdst>] [-moveToLocal <src> <localdst>]" +
                     " [-mkdir <path>] [-report]");
             return;
@@ -264,9 +271,9 @@ public class DFSShell {
                 tc.report();
             }
             System.exit(0);
-        } catch (IOException e ) {
-          System.err.println( cmd.substring(1) + ": " + e.getLocalizedMessage() );  
-          System.exit(-1);
+        } catch (IOException e) {
+            System.err.println(cmd.substring(1) + ": " + e.getLocalizedMessage());
+            System.exit(-1);
         } finally {
             fs.close();
         }
