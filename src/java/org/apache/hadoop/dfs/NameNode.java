@@ -67,6 +67,7 @@ public class NameNode implements ClientProtocol, DatanodeProtocol, FSConstants {
      */
     private boolean stopRequested = false;
 
+    // zeng: 删除重建image和edits文件
     /**
      * Format a new filesystem.  Destroys any filesystem that may already
      * exist at this location.
@@ -479,7 +480,7 @@ public class NameNode implements ClientProtocol, DatanodeProtocol, FSConstants {
                 }
             }
 
-            // zeng: TODO
+            // zeng: 删除重建image和edits文件
             format(conf);
 
             System.err.println("Formatted " + dir);

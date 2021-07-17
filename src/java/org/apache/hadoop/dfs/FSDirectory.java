@@ -333,6 +333,7 @@ class FSDirectory implements FSConstants {
         }
     }
 
+    // zeng: 删除重建image和edits文件
     /**
      * Create a new dfs name directory.  Caution: this destroys all files
      * in this filesystem.
